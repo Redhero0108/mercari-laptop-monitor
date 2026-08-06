@@ -97,7 +97,7 @@ function renderResultsPage(entries) {
       const reasons = Array.isArray(entry.reasons) ? entry.reasons.join('、') : '';
       const status = entry.shouldAlert ? '<span class="match">符合提醒条件</span>' : '<span class="normal">未达提醒线</span>';
       return `<tr>
-        <td><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span> ${escapeHtml(entry.score)}</td>
+        <td><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">级</span></td>
         <td>${escapeHtml(price)}</td>
         <td><a class="title" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}</a><div class="reasons">${escapeHtml(reasons)}</div></td>
         <td>${status}</td>
@@ -130,6 +130,7 @@ function renderResultsPage(entries) {
     .title:hover { text-decoration: underline; }
     .reasons { margin-top: 5px; color: #667085; font-size: 12px; }
     .grade { display: inline-grid; width: 25px; height: 25px; place-items: center; border-radius: 7px; font-weight: 750; color: white; }
+    .grade-label { margin-left: 4px; color: #475467; }
     .grade-S { background: #9b51e0; } .grade-A { background: #12a66a; } .grade-B { background: #e8a20c; } .grade-C { background: #7a8491; }
     .match { color: #087443; font-weight: 700; } .normal { color: #667085; }
     .open { display: inline-block; padding: 7px 11px; border-radius: 7px; background: #e60023; color: white; text-decoration: none; white-space: nowrap; }
@@ -141,7 +142,7 @@ function renderResultsPage(entries) {
   <h1>メルカリ笔记本监测结果</h1>
   <p class="hint">按最近检查时间排列；页面每30秒自动刷新。点击商品标题或“打开商品”即可跳转。</p>
   <div class="panel"><table>
-    <thead><tr><th>评分</th><th>价格</th><th>商品</th><th>判断</th><th>检查时间</th><th>链接</th></tr></thead>
+    <thead><tr><th>等级</th><th>价格</th><th>商品</th><th>判断</th><th>检查时间</th><th>链接</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>
 </main></body></html>\n`;
@@ -267,7 +268,7 @@ async function readDetail(page, item) {
 
 function notificationBody(item, assessment) {
   const reasonText = assessment.reasons.slice(0, 5).join('、');
-  return `${item.title}\n¥${assessment.price.toLocaleString('ja-JP')}　评分 ${assessment.score}（${assessment.grade}）\n${reasonText}\n\n是否打开商品页面？`;
+  return `${item.title}\n¥${assessment.price.toLocaleString('ja-JP')}　${assessment.grade}级\n${reasonText}\n\n是否打开商品页面？`;
 }
 
 function notify(item, assessment) {
@@ -334,7 +335,7 @@ async function scanOnce() {
       const detailed = await readDetail(detailPage, item);
       const assessment = assessCandidate(detailed, config);
       const priceText = assessment.price === null ? '价格不明' : `¥${assessment.price.toLocaleString('ja-JP')}`;
-      await log(`[${assessment.grade}/${assessment.score}] ${priceText} ${detailed.title} ${detailed.url}`);
+      await log(`[${assessment.grade}级] ${priceText} ${detailed.title} ${detailed.url}`);
       await recordResult(detailed, assessment);
       if (!diagnose) {
         state.seen[item.id] = {
