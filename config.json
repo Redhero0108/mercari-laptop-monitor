@@ -1,0 +1,20 @@
+{
+  "pollMinutes": 5,
+  "maxPriceYen": 95000,
+  "minScore": 58,
+  "minIntelGeneration": 10,
+  "minRyzenSeries": 5,
+  "detailCheckLimit": 15,
+  "headless": true,
+  "notify": true,
+  "excludeKeywords": [
+    "ジャンク",
+    "JUNK",
+    "部品取り"
+  ],
+  "queries": [
+    "32GB 1TB ノートPC",
+    "32G 1TB ノートパソコン",
+    "メモリ32GB SSD1TB ノート"
+  ]
+}
