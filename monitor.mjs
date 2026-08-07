@@ -26,9 +26,10 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 const args = new Set(process.argv.slice(2));
 const diagnose = args.has('--diagnose');
 const refreshMetadata = args.has('--refresh-metadata');
-const once = diagnose || refreshMetadata || args.has('--once');
+const pruneInactive = args.has('--prune-inactive');
+const once = diagnose || refreshMetadata || pruneInactive || args.has('--once');
 const alertExisting = args.has('--alert-existing');
-const noNotify = diagnose || args.has('--no-notify');
+const noNotify = diagnose || pruneInactive || args.has('--no-notify');
 const showBrowser = args.has('--show-browser');
 
 const defaults = {
@@ -500,7 +501,7 @@ async function readSearch(page, query) {
 
 async function readDetail(page, item) {
   const response = await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  let pageData = { mainText: '', photoUrls: [], likeText: null, itemCondition: null };
+  let pageData = { mainText: '', photoUrls: [], likeText: null, itemCondition: null, soldButtonText: null };
   for (const delay of [1400, 2200, 3200]) {
     await page.waitForTimeout(delay);
     pageData = await page.evaluate(() => {
@@ -524,12 +525,19 @@ async function readDetail(page, item) {
         ].filter(Boolean),
         likeText: document.querySelector('[data-testid="icon-heart-button"] button')?.innerText?.trim() ?? null,
         itemCondition,
+        soldButtonText: [...document.querySelectorAll('button')]
+          .find((button) => button.disabled && button.textContent?.trim() === '売り切れました')
+          ?.textContent?.trim() ?? null,
       };
     });
     if (pageData.mainText.trim()) break;
   }
   if (!pageData.mainText.trim()) throw new Error(`商品详情为空（页面：${page.url()}）`);
-  const availability = detectListingAvailability(pageData.mainText, response?.status() ?? null);
+  const availability = detectListingAvailability(
+    pageData.mainText,
+    response?.status() ?? null,
+    pageData.soldButtonText,
+  );
   const ownListing = pageData.mainText.split('商品の情報')[0].slice(0, 12000);
   return {
     ...item,
@@ -538,7 +546,7 @@ async function readDetail(page, item) {
     likeCount: parseLikeCount(pageData.likeText),
     itemCondition: pageData.itemCondition ?? item.itemCondition ?? null,
     publishedAt: extractPublishedAtFromPhotoUrls(pageData.photoUrls, item.id),
-    sold: /売り切れました|SOLD/i.test(ownListing),
+    sold: availability.sold,
     removed: availability.removed,
     unavailableReason: availability.reason,
   };
@@ -604,7 +612,7 @@ async function refreshResultsMetadata(limit, excludeIds = new Set(), uncheckedMe
   for (const entry of candidates) {
     try {
       const detailed = await readDetail(page, entry);
-      if (detailed.removed) {
+      if (detailed.removed || detailed.sold) {
         await removeResult(detailed);
         refreshed += 1;
         await log(`已剔除失效商品：${detailed.title}（${detailed.unavailableReason}）`);
@@ -674,11 +682,16 @@ async function scanOnce() {
   for (const item of pending) {
     try {
       const detailed = await readDetail(detailPage, item);
-      if (detailed.removed) {
+      if (detailed.removed || detailed.sold) {
         await removeResult(detailed);
         await log(`已剔除失效商品：${detailed.title}（${detailed.unavailableReason}）`);
         if (!diagnose) {
-          state.seen[item.id] = { seenAt: new Date().toISOString(), title: detailed.title, removed: true };
+          state.seen[item.id] = {
+            seenAt: new Date().toISOString(),
+            title: detailed.title,
+            removed: detailed.removed,
+            sold: detailed.sold,
+          };
         }
         continue;
       }
@@ -731,16 +744,19 @@ process.on('SIGINT', async () => {
 });
 
 await syncResultsPage();
-const startupMessage = refreshMetadata
-  ? `资料补查模式启动；本次将复查全部 ${missingMetadataCount()} 条缺少资料的旧记录。`
-  : `${diagnose ? '诊断模式' : '监测器'}启动；查询 ${config.queries.length} 组，每 ${config.pollMinutes} 分钟检查一次。`;
+const startupMessage = pruneInactive
+  ? `失效商品清理模式启动；本次将检查全部 ${Object.keys(results).length} 条结果。`
+  : refreshMetadata
+    ? `资料补查模式启动；本次将复查全部 ${missingMetadataCount()} 条缺少资料的旧记录。`
+    : `${diagnose ? '诊断模式' : '监测器'}启动；查询 ${config.queries.length} 组，每 ${config.pollMinutes} 分钟检查一次。`;
 await log(startupMessage);
 await log('可点击结果页：results.html（双击 open-results.cmd 打开）');
 try {
   browser = await launchBrowser();
   do {
     try {
-      if (refreshMetadata) await refreshResultsMetadata(Number.POSITIVE_INFINITY, new Set(), true);
+      if (pruneInactive) await refreshResultsMetadata(Number.POSITIVE_INFINITY, new Set(), false);
+      else if (refreshMetadata) await refreshResultsMetadata(Number.POSITIVE_INFINITY, new Set(), true);
       else await scanOnce();
     } catch (error) {
       await log(`本轮失败：${error.message}`);
