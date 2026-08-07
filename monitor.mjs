@@ -4,6 +4,7 @@ import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { parseLikeCount } from './likes.mjs';
 import { assessCandidate, parsePrice } from './scoring.mjs';
 import { extractPublishedAtFromPhotoUrls, formatJstMinute } from './time.mjs';
 
@@ -22,7 +23,8 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 
 const args = new Set(process.argv.slice(2));
 const diagnose = args.has('--diagnose');
-const once = diagnose || args.has('--once');
+const refreshMetadata = args.has('--refresh-metadata');
+const once = diagnose || refreshMetadata || args.has('--once');
 const alertExisting = args.has('--alert-existing');
 const noNotify = diagnose || args.has('--no-notify');
 const showBrowser = args.has('--show-browser');
@@ -34,6 +36,7 @@ const defaults = {
   minIntelGeneration: 10,
   minRyzenSeries: 5,
   detailCheckLimit: 15,
+  metadataRefreshLimit: 5,
   headless: true,
   notify: true,
   excludeKeywords: ['ジャンク', 'JUNK', '部品取り'],
@@ -49,6 +52,7 @@ const defaults = {
 const config = { ...defaults, ...JSON.parse(await readFile(CONFIG_FILE, 'utf8')) };
 config.pollMinutes = Math.max(2, Number(config.pollMinutes) || 5);
 config.detailCheckLimit = Math.max(1, Math.min(30, Number(config.detailCheckLimit) || 15));
+config.metadataRefreshLimit = Math.max(0, Math.min(10, Number(config.metadataRefreshLimit) || 0));
 config.queries = Array.isArray(config.queries) && config.queries.length ? config.queries : defaults.queries;
 config.excludeKeywords = Array.isArray(config.excludeKeywords)
   ? config.excludeKeywords.map(String).map((word) => word.trim()).filter(Boolean)
@@ -100,14 +104,18 @@ function renderResultsPage(entries) {
   const rows = entries.length
     ? entries.map((entry) => {
       const price = entry.price === null ? '价格不明' : `¥${Number(entry.price).toLocaleString('ja-JP')}`;
+      const likeCount = Number.isInteger(entry.likeCount)
+        ? entry.likeCount.toLocaleString('ja-JP')
+        : entry.likeCheckedAt ? '无法取得' : '尚未检查';
       const publishedAt = formatJstMinute(entry.publishedAt);
       const checkedAt = new Date(entry.checkedAt).toLocaleString('zh-CN', { hour12: false });
       const reasons = Array.isArray(entry.reasons) ? entry.reasons.join('、') : '';
       const status = entry.shouldAlert ? '<span class="match">符合提醒条件</span>' : '<span class="normal">未达提醒线</span>';
       const gradeRank = { S: 4, A: 3, B: 2, C: 1 }[entry.grade] ?? 0;
-      return `<tr class="result-row" data-grade="${gradeRank}" data-price="${entry.price ?? ''}" data-title="${escapeHtml(entry.title)}" data-match="${entry.shouldAlert ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-time="${Date.parse(entry.checkedAt) || 0}">
+      return `<tr class="result-row" data-grade="${gradeRank}" data-price="${entry.price ?? ''}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-title="${escapeHtml(entry.title)}" data-match="${entry.shouldAlert ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-time="${Date.parse(entry.checkedAt) || 0}">
         <td><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">级</span></td>
         <td>${escapeHtml(price)}</td>
+        <td>${escapeHtml(likeCount)}</td>
         <td><a class="title" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}</a><div class="reasons">${escapeHtml(reasons)}</div></td>
         <td>${status}</td>
         <td class="date-cell">${escapeHtml(publishedAt)}</td>
@@ -115,7 +123,7 @@ function renderResultsPage(entries) {
         <td><a class="open" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">打开商品</a></td>
       </tr>`;
     }).join('\n')
-    : '<tr><td class="empty" colspan="7">还没有检查结果，请先运行监测器或诊断模式。</td></tr>';
+    : '<tr><td class="empty" colspan="8">还没有检查结果，请先运行监测器或诊断模式。</td></tr>';
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -131,7 +139,7 @@ function renderResultsPage(entries) {
     h1 { margin: 0 0 6px; font-size: 25px; }
     .hint { margin: 0 0 18px; color: #667085; }
     .panel { overflow-x: auto; background: white; border: 1px solid #e4e7ec; border-radius: 12px; box-shadow: 0 8px 28px rgba(16,24,40,.06); }
-    table { width: 100%; border-collapse: collapse; min-width: 1150px; }
+    table { width: 100%; border-collapse: collapse; min-width: 1240px; }
     th, td { padding: 13px 14px; border-bottom: 1px solid #edf0f4; text-align: left; vertical-align: top; }
     th { background: #fafbfc; color: #475467; font-size: 13px; }
     .sort-button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 5px; margin: -3px -5px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
@@ -161,6 +169,7 @@ function renderResultsPage(entries) {
     <thead><tr>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="grade" data-default-direction="desc">等级 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="price" data-default-direction="asc">价格 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
+      <th aria-sort="none"><button type="button" class="sort-button" data-sort="likes" data-default-direction="desc">いいね数 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="title" data-default-direction="asc">商品 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="match" data-default-direction="desc">判断 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="published" data-default-direction="desc">发布时间 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
@@ -180,7 +189,7 @@ function renderResultsPage(entries) {
 
     function valueFor(row, key) {
       if (key === 'title') return row.dataset.title || '';
-      if ((key === 'price' || key === 'published') && row.dataset[key] === '') return null;
+      if ((key === 'price' || key === 'likes' || key === 'published') && row.dataset[key] === '') return null;
       return Number(row.dataset[key]);
     }
 
@@ -246,6 +255,8 @@ async function recordResult(item, assessment) {
     grade: assessment.grade,
     shouldAlert: assessment.shouldAlert,
     reasons: assessment.reasons,
+    likeCount: Number.isInteger(item.likeCount) ? item.likeCount : results[item.id]?.likeCount ?? null,
+    likeCheckedAt: new Date().toISOString(),
     publishedAt: item.publishedAt ?? results[item.id]?.publishedAt ?? null,
     checkedAt: new Date().toISOString(),
   };
@@ -327,7 +338,7 @@ async function readSearch(page, query) {
 
 async function readDetail(page, item) {
   await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  let pageData = { mainText: '', photoUrls: [] };
+  let pageData = { mainText: '', photoUrls: [], likeText: null };
   for (const delay of [1400, 2200, 3200]) {
     await page.waitForTimeout(delay);
     pageData = await page.evaluate(() => ({
@@ -340,6 +351,7 @@ async function readDetail(page, item) {
           ...(image.getAttribute('srcset') || '').split(',').map((part) => part.trim().split(/\s+/, 1)[0]),
         ]),
       ].filter(Boolean),
+      likeText: document.querySelector('[data-testid="icon-heart-button"] button')?.innerText?.trim() ?? null,
     }));
     if (pageData.mainText.trim()) break;
   }
@@ -349,6 +361,7 @@ async function readDetail(page, item) {
     ...item,
     detail: ownListing,
     price: item.price ?? parsePrice(ownListing),
+    likeCount: parseLikeCount(pageData.likeText),
     publishedAt: extractPublishedAtFromPhotoUrls(pageData.photoUrls, item.id),
     sold: /売り切れました|SOLD/i.test(ownListing),
   };
@@ -377,6 +390,48 @@ function notify(item, assessment) {
 async function recordAlert(item, assessment) {
   const record = { alertedAt: new Date().toISOString(), ...item, assessment };
   await appendFile(ALERTS_FILE, `${JSON.stringify(record)}\n`, 'utf8');
+}
+
+async function markMetadataFailure(item, error) {
+  const existing = results[item.id];
+  if (!existing) return;
+  results[item.id] = {
+    ...existing,
+    likeCheckedAt: new Date().toISOString(),
+    metadataError: error.message,
+  };
+  await writeResultsPage();
+}
+
+async function refreshResultsMetadata(limit, excludeIds = new Set(), missingLikesOnly = false) {
+  if (limit <= 0) return 0;
+  const candidates = Object.values(results)
+    .filter((entry) => entry.id
+      && entry.url
+      && !excludeIds.has(entry.id)
+      && (!missingLikesOnly || !Number.isInteger(entry.likeCount)))
+    .sort((a, b) => Number(Number.isInteger(a.likeCount)) - Number(Number.isInteger(b.likeCount))
+      || String(a.likeCheckedAt || '').localeCompare(String(b.likeCheckedAt || '')))
+    .slice(0, limit);
+  if (!candidates.length) return 0;
+
+  const page = await browser.newPage();
+  let refreshed = 0;
+  for (const entry of candidates) {
+    try {
+      const detailed = await readDetail(page, entry);
+      const assessment = assessCandidate(detailed, config);
+      await recordResult(detailed, assessment);
+      refreshed += 1;
+      const likeText = Number.isInteger(detailed.likeCount) ? detailed.likeCount : '无法取得';
+      await log(`补查资料：いいね ${likeText}；${detailed.title}`);
+    } catch (error) {
+      await markMetadataFailure(entry, error);
+      await log(`补查 ${entry.id} 失败：${error.message}`);
+    }
+  }
+  await page.close();
+  return refreshed;
 }
 
 async function scanOnce() {
@@ -421,10 +476,9 @@ async function scanOnce() {
     : allItems.filter((item) => !state.seen[item.id]).slice(0, config.detailCheckLimit);
   if (!pending.length) {
     await log('本轮没有发现新商品。');
-    return;
   }
 
-  const detailPage = await browser.newPage();
+  const detailPage = pending.length ? await browser.newPage() : null;
   let alertCount = 0;
   for (const item of pending) {
     try {
@@ -454,13 +508,16 @@ async function scanOnce() {
       // 暂时加载失败的商品留到下一轮重试，避免因为网络波动漏报。
     }
   }
-  await detailPage.close();
+  if (detailPage) await detailPage.close();
 
   if (!diagnose) {
     state.initialized = true;
     await saveState();
   }
-  await log(`本轮检查 ${pending.length} 件新商品，符合提醒条件 ${alertCount} 件。`);
+  const refreshedCount = diagnose
+    ? 0
+    : await refreshResultsMetadata(config.metadataRefreshLimit, new Set(pending.map((item) => item.id)));
+  await log(`本轮检查 ${pending.length} 件新商品，符合提醒条件 ${alertCount} 件；补查旧记录 ${refreshedCount} 件。`);
 }
 
 async function shutdown() {
@@ -474,13 +531,17 @@ process.on('SIGINT', async () => {
 });
 
 await writeResultsPage();
-await log(`${diagnose ? '诊断模式' : '监测器'}启动；查询 ${config.queries.length} 组，每 ${config.pollMinutes} 分钟检查一次。`);
+const startupMessage = refreshMetadata
+  ? `资料补查模式启动；本次最多补查 ${config.detailCheckLimit} 条旧记录。`
+  : `${diagnose ? '诊断模式' : '监测器'}启动；查询 ${config.queries.length} 组，每 ${config.pollMinutes} 分钟检查一次。`;
+await log(startupMessage);
 await log('可点击结果页：results.html（双击 open-results.cmd 打开）');
 try {
   browser = await launchBrowser();
   do {
     try {
-      await scanOnce();
+      if (refreshMetadata) await refreshResultsMetadata(config.detailCheckLimit, new Set(), true);
+      else await scanOnce();
     } catch (error) {
       await log(`本轮失败：${error.message}`);
     }

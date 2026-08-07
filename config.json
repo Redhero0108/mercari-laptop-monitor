@@ -5,6 +5,7 @@
   "minIntelGeneration": 10,
   "minRyzenSeries": 5,
   "detailCheckLimit": 15,
+  "metadataRefreshLimit": 5,
   "headless": true,
   "notify": true,
   "excludeKeywords": [
