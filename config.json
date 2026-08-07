@@ -4,6 +4,7 @@
   "minScore": 58,
   "minIntelGeneration": 10,
   "minRyzenSeries": 5,
+  "maxConditionLevel": 3,
   "detailCheckLimit": 15,
   "metadataRefreshLimit": 5,
   "headless": true,

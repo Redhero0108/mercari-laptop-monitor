@@ -1,9 +1,10 @@
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
-import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, open, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { detectListingAvailability } from './availability.mjs';
 import { parseLikeCount } from './likes.mjs';
 import { assessCandidate, parsePrice } from './scoring.mjs';
 import { extractPublishedAtFromPhotoUrls, formatJstMinute } from './time.mjs';
@@ -18,6 +19,7 @@ const ALERTS_FILE = path.join(APP_DIR, 'alerts.jsonl');
 const LOG_FILE = path.join(APP_DIR, 'monitor.log');
 const RESULTS_DATA_FILE = path.join(APP_DIR, 'results.json');
 const RESULTS_HTML_FILE = path.join(APP_DIR, 'results.html');
+const RESULTS_LOCK_FILE = path.join(APP_DIR, '.results.lock');
 const SEARCH_BASE = 'https://jp.mercari.com/search';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150 Safari/537.36';
 
@@ -35,6 +37,7 @@ const defaults = {
   minScore: 58,
   minIntelGeneration: 10,
   minRyzenSeries: 5,
+  maxConditionLevel: 3,
   detailCheckLimit: 15,
   metadataRefreshLimit: 5,
   headless: true,
@@ -53,6 +56,7 @@ const config = { ...defaults, ...JSON.parse(await readFile(CONFIG_FILE, 'utf8'))
 config.pollMinutes = Math.max(2, Number(config.pollMinutes) || 5);
 config.detailCheckLimit = Math.max(1, Math.min(30, Number(config.detailCheckLimit) || 15));
 config.metadataRefreshLimit = Math.max(0, Math.min(10, Number(config.metadataRefreshLimit) || 0));
+config.maxConditionLevel = Math.max(1, Math.min(6, Number(config.maxConditionLevel) || 3));
 config.queries = Array.isArray(config.queries) && config.queries.length ? config.queries : defaults.queries;
 config.excludeKeywords = Array.isArray(config.excludeKeywords)
   ? config.excludeKeywords.map(String).map((word) => word.trim()).filter(Boolean)
@@ -61,6 +65,12 @@ config.excludeKeywords = Array.isArray(config.excludeKeywords)
 let state = await loadState();
 let results = await loadResults();
 let browser;
+
+function missingMetadataCount() {
+  return Object.values(results).filter((entry) => entry.id
+    && entry.url
+    && (!Number.isInteger(entry.likeCount) || !Number.isInteger(entry.itemConditionLevel))).length;
+}
 
 async function loadState() {
   try {
@@ -91,6 +101,33 @@ async function loadResults() {
   }
 }
 
+async function withResultsLock(action) {
+  let lockHandle = null;
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    try {
+      lockHandle = await open(RESULTS_LOCK_FILE, 'wx');
+      break;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      if (attempt % 20 === 19) {
+        const lockAge = Date.now() - (await stat(RESULTS_LOCK_FILE).catch(() => null))?.mtimeMs;
+        if (Number.isFinite(lockAge) && lockAge > 120_000) {
+          await unlink(RESULTS_LOCK_FILE).catch(() => {});
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  if (!lockHandle) throw new Error('等待结果文件锁超时');
+
+  try {
+    return await action();
+  } finally {
+    await lockHandle.close().catch(() => {});
+    await unlink(RESULTS_LOCK_FILE).catch(() => {});
+  }
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -101,29 +138,44 @@ function escapeHtml(value) {
 }
 
 function renderResultsPage(entries) {
+  const recentCutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const isRecentEntry = (entry) => entry.publishedAt && Date.parse(entry.publishedAt) >= recentCutoff;
+  const qualifiedEntries = entries.filter((entry) => entry.shouldAlert && entry.conditionEligible === true);
+  const recentEntries = entries.filter(isRecentEntry);
+  const topGradeEntries = entries.filter((entry) => entry.grade === 'S' || entry.grade === 'A');
+  const bestEntry = [...qualifiedEntries].sort((a, b) => Number(b.score) - Number(a.score)
+    || Number(a.price ?? Infinity) - Number(b.price ?? Infinity))[0] ?? null;
   const rows = entries.length
     ? entries.map((entry) => {
       const price = entry.price === null ? '价格不明' : `¥${Number(entry.price).toLocaleString('ja-JP')}`;
       const likeCount = Number.isInteger(entry.likeCount)
         ? entry.likeCount.toLocaleString('ja-JP')
         : entry.likeCheckedAt ? '无法取得' : '尚未检查';
+      const conditionLevel = Number.isInteger(entry.itemConditionLevel) ? entry.itemConditionLevel : null;
+      const itemCondition = conditionLevel === null
+        ? entry.conditionCheckedAt ? '无法取得' : '尚未检查'
+        : `${conditionLevel}｜${entry.itemCondition}`;
       const publishedAt = formatJstMinute(entry.publishedAt);
       const checkedAt = new Date(entry.checkedAt).toLocaleString('zh-CN', { hour12: false });
       const reasons = Array.isArray(entry.reasons) ? entry.reasons.join('、') : '';
-      const status = entry.shouldAlert ? '<span class="match">符合提醒条件</span>' : '<span class="normal">未达提醒线</span>';
+      const shouldAlert = entry.shouldAlert && entry.conditionEligible === true;
+      const status = shouldAlert ? '<span class="match">符合提醒条件</span>' : '<span class="normal">未达提醒线</span>';
       const gradeRank = { S: 4, A: 3, B: 2, C: 1 }[entry.grade] ?? 0;
-      return `<tr class="result-row" data-grade="${gradeRank}" data-price="${entry.price ?? ''}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-title="${escapeHtml(entry.title)}" data-match="${entry.shouldAlert ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-time="${Date.parse(entry.checkedAt) || 0}">
-        <td><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">级</span></td>
-        <td>${escapeHtml(price)}</td>
-        <td>${escapeHtml(likeCount)}</td>
-        <td><a class="title" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}</a><div class="reasons">${escapeHtml(reasons)}</div></td>
-        <td>${status}</td>
+      const isRecent = isRecentEntry(entry);
+      const newBadge = isRecent ? '<span class="new-badge">NEW</span>' : '';
+      return `<tr class="result-row" data-grade="${gradeRank}" data-price="${entry.price ?? ''}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-condition="${conditionLevel ?? ''}" data-title="${escapeHtml(entry.title)}" data-match="${shouldAlert ? 1 : 0}" data-new="${isRecent ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-time="${Date.parse(entry.checkedAt) || 0}">
+        <td class="grade-cell"><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">级</span></td>
+        <td class="numeric-cell">${escapeHtml(price)}</td>
+        <td class="numeric-cell">${escapeHtml(likeCount)}</td>
+        <td class="condition-cell">${escapeHtml(itemCondition)}</td>
+        <td class="product-cell"><div class="product-title-line">${newBadge}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}</a></div><div class="reasons" title="${escapeHtml(reasons)}">${escapeHtml(reasons)}</div></td>
+        <td class="status-cell">${status}</td>
         <td class="date-cell">${escapeHtml(publishedAt)}</td>
-        <td>${escapeHtml(checkedAt)}</td>
-        <td><a class="open" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">打开商品</a></td>
+        <td class="date-cell">${escapeHtml(checkedAt)}</td>
+        <td class="action-cell"><a class="open" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">打开商品</a></td>
       </tr>`;
     }).join('\n')
-    : '<tr><td class="empty" colspan="8">还没有检查结果，请先运行监测器或诊断模式。</td></tr>';
+    : '<tr><td class="empty" colspan="9">还没有检查结果，请先运行监测器或诊断模式。</td></tr>';
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -133,43 +185,98 @@ function renderResultsPage(entries) {
   <meta http-equiv="refresh" content="30">
   <title>メルカリ笔记本监测结果</title>
   <style>
-    :root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
-    body { margin: 0; background: #f5f7fb; color: #1d2733; }
-    main { width: min(1380px, calc(100% - 32px)); margin: 26px auto; }
-    h1 { margin: 0 0 6px; font-size: 25px; }
-    .hint { margin: 0 0 18px; color: #667085; }
-    .panel { overflow-x: auto; background: white; border: 1px solid #e4e7ec; border-radius: 12px; box-shadow: 0 8px 28px rgba(16,24,40,.06); }
-    table { width: 100%; border-collapse: collapse; min-width: 1240px; }
-    th, td { padding: 13px 14px; border-bottom: 1px solid #edf0f4; text-align: left; vertical-align: top; }
-    th { background: #fafbfc; color: #475467; font-size: 13px; }
-    .sort-button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 5px; margin: -3px -5px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
-    .sort-button:hover { background: #eef2f6; color: #1d2733; }
-    .sort-button:focus-visible { outline: 2px solid #1677d2; outline-offset: 2px; }
-    .sort-icon { min-width: 12px; color: #98a2b3; font-size: 15px; line-height: 1; }
-    th[aria-sort="ascending"] .sort-icon, th[aria-sort="descending"] .sort-icon { color: #075ec7; }
-    td { font-size: 14px; }
+    :root { color-scheme: light; font-family: Inter, "Segoe UI", "Microsoft YaHei", "Yu Gothic UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: linear-gradient(180deg, #f7f4ed 0, #f1ede4 48%, #ebe6dc 100%); color: #25282d; }
+    main { width: min(1880px, calc(100% - 40px)); margin: 30px auto 46px; }
+    .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin: 0 4px 20px; }
+    .brand-lockup { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .brand-mark { display: grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; border: 1px solid #a77a2d; border-radius: 12px; background: linear-gradient(145deg, #d8b86e, #9b6e25 72%); color: #fffaf0; font: 900 23px/1 Georgia, serif; box-shadow: 0 7px 20px rgba(133,95,31,.16), inset 0 1px rgba(255,255,255,.4); }
+    .eyebrow { margin: 0 0 4px; color: #9a732f; font-size: 10px; font-weight: 800; letter-spacing: .18em; }
+    h1 { margin: 0; color: #25282d; font-size: clamp(22px, 2vw, 30px); font-weight: 760; letter-spacing: .015em; white-space: nowrap; }
+    .hint { margin: 0 0 4px; color: #77736b; font-size: 13px; text-align: right; white-space: nowrap; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .summary-card { position: relative; min-height: 82px; padding: 15px 17px; overflow: hidden; border: 1px solid #ddd3c1; border-radius: 11px; background: rgba(255,254,250,.94); box-shadow: 0 5px 18px rgba(70,57,35,.05), inset 0 1px rgba(255,255,255,.8); }
+    .summary-card::after { content: ""; position: absolute; inset: auto 0 0; height: 2px; background: linear-gradient(90deg, #b58a3d, transparent 70%); opacity: .52; }
+    .summary-label { display: block; color: #817b70; font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .summary-value { display: block; margin-top: 6px; color: #292c31; font-family: "Cascadia Mono", Consolas, monospace; font-size: 25px; font-weight: 720; font-variant-numeric: tabular-nums; line-height: 1; }
+    .summary-card.signal .summary-value { color: #9b6f24; }
+    .summary-card.positive .summary-value { color: #2f7d5b; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 46px; margin-bottom: 10px; padding: 7px 9px; border: 1px solid #ddd3c1; border-radius: 10px; background: rgba(255,253,248,.88); }
+    .filters { display: flex; align-items: center; gap: 5px; }
+    .filter-button { padding: 7px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #736e65; font: inherit; font-size: 11px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+    .filter-button:hover { color: #3c3d40; background: #f1ece2; }
+    .filter-button.active { border-color: #c7ad78; background: #f5ebd5; color: #7d5a1e; }
+    .filter-count { margin-left: 4px; color: #9a9489; font-family: "Cascadia Mono", Consolas, monospace; }
+    .filter-button.active .filter-count { color: #a17831; }
+    .best-signal { min-width: 0; color: #817b70; font-size: 11px; white-space: nowrap; }
+    .best-signal strong { margin-right: 7px; color: #98702c; font-size: 9px; letter-spacing: .12em; }
+    .best-signal a { display: inline-block; max-width: 520px; overflow: hidden; color: #5f5c56; text-overflow: ellipsis; text-decoration: none; vertical-align: bottom; white-space: nowrap; }
+    .best-signal a:hover { color: #8b631f; }
+    .panel { overflow: auto; background: #fffefa; border: 1px solid #d8cdb7; border-radius: 15px; box-shadow: 0 15px 42px rgba(72,58,34,.1), inset 0 1px rgba(255,255,255,.9); scrollbar-color: #b4965d #eee8dc; }
+    table { width: 100%; min-width: 1660px; border-collapse: separate; border-spacing: 0; }
+    th, td { padding: 14px 16px; border-bottom: 1px solid #ebe5da; text-align: left; vertical-align: middle; white-space: nowrap; }
+    th { position: sticky; top: 0; z-index: 2; background: linear-gradient(180deg, #eee9df, #e8e2d7); color: #735824; font-size: 12px; font-weight: 750; letter-spacing: .035em; box-shadow: inset 0 -1px #d2c6af; }
+    tbody tr { transition: background-color .16s ease; }
+    tbody tr:hover { background: #fbf4e7; }
+    .sort-button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; margin: -5px -7px; border: 0; border-radius: 7px; background: transparent; color: inherit; font: inherit; font-weight: inherit; white-space: nowrap; cursor: pointer; }
+    .sort-button:hover { background: rgba(167,122,45,.09); color: #8f6723; }
+    .sort-button:focus-visible { outline: 2px solid #a77a2d; outline-offset: 2px; }
+    .sort-icon { min-width: 12px; color: #aa9a79; font-size: 14px; line-height: 1; }
+    th[aria-sort="ascending"] .sort-icon, th[aria-sort="descending"] .sort-icon { color: #9b6f24; }
+    td { color: #34373c; font-size: 13px; }
     tr:last-child td { border-bottom: 0; }
-    .title { color: #075ec7; font-weight: 650; text-decoration: none; }
-    .title:hover { text-decoration: underline; }
-    .reasons { margin-top: 5px; color: #667085; font-size: 12px; }
-    .grade { display: inline-grid; width: 25px; height: 25px; place-items: center; border-radius: 7px; font-weight: 750; color: white; }
-    .grade-label { margin-left: 4px; color: #475467; }
-    .grade-S { background: #9b51e0; } .grade-A { background: #12a66a; } .grade-B { background: #e8a20c; } .grade-C { background: #7a8491; }
-    .match { color: #087443; font-weight: 700; } .normal { color: #667085; }
-    .date-cell { white-space: nowrap; }
-    .open { display: inline-block; padding: 7px 11px; border-radius: 7px; background: #e60023; color: white; text-decoration: none; white-space: nowrap; }
-    .open:hover { background: #c9001f; }
-    .empty { padding: 42px; color: #667085; text-align: center; }
+    th:first-child, td:first-child { padding-left: 20px; }
+    th:last-child, td:last-child { padding-right: 20px; }
+    th:first-child { left: 0; z-index: 4; }
+    td:first-child { position: sticky; left: 0; z-index: 1; background: #fffefa; box-shadow: 1px 0 #e2dacb; }
+    tbody tr:hover td:first-child { background: #fbf4e7; }
+    .grade-cell, .numeric-cell, .condition-cell, .status-cell, .date-cell, .action-cell { width: 1%; white-space: nowrap; }
+    .product-cell { width: 100%; min-width: 520px; }
+    .product-title-line { display: flex; align-items: center; gap: 7px; max-width: 720px; min-width: 0; }
+    .title, .reasons { display: block; max-width: 720px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .title { min-width: 0; }
+    .title { color: #7f5b1d; font-weight: 720; text-decoration: none; letter-spacing: .005em; }
+    .title:hover { color: #a77a2d; text-decoration: underline; text-underline-offset: 3px; }
+    .reasons { margin-top: 5px; color: #817b72; font-size: 11px; }
+    .new-badge { flex: 0 0 auto; padding: 2px 5px; border: 1px solid #c2a66f; border-radius: 4px; background: #f7eedb; color: #8f6723; font: 800 8px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+    .grade { display: inline-grid; width: 27px; height: 27px; place-items: center; border: 1px solid rgba(70,60,40,.12); border-radius: 8px; font-weight: 850; box-shadow: inset 0 1px rgba(255,255,255,.3); }
+    .grade-label { margin-left: 5px; color: #817b72; font-size: 11px; }
+    .grade-S { background: linear-gradient(145deg, #c89d47, #8c611f); color: #fffaf0; } .grade-A { background: #3f8766; color: #fff; } .grade-B { background: #d39b31; color: #33250d; } .grade-C { background: #8b8b86; color: #fff; }
+    .match, .normal { display: inline-flex; align-items: center; min-height: 26px; padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 750; white-space: nowrap; }
+    .match { border: 1px solid #8ebca5; background: #e8f4ed; color: #2f7254; } .normal { border: 1px solid #ddd8ce; background: #f4f2ed; color: #77736b; }
+    .open { display: inline-block; padding: 8px 13px; border: 1px solid #8d6422; border-radius: 8px; background: linear-gradient(145deg, #b58738, #8f6422); color: #fffaf0; font-weight: 800; text-decoration: none; white-space: nowrap; box-shadow: 0 5px 14px rgba(126,88,28,.17); transition: transform .15s ease, filter .15s ease; }
+    .open:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .empty { padding: 48px; color: #817b72; text-align: center; }
+    @media (max-width: 1050px) { .page-header { align-items: flex-start; flex-direction: column; gap: 10px; } .hint { text-align: left; } .summary-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); } .toolbar { align-items: flex-start; flex-direction: column; } }
   </style>
 </head>
 <body><main>
-  <h1>メルカリ笔记本监测结果</h1>
-  <p class="hint">点击栏目名称可切换升序／降序；页面每30秒自动刷新。点击商品标题或“打开商品”即可跳转。</p>
+  <header class="page-header">
+    <div class="brand-lockup"><span class="brand-mark">M</span><div><p class="eyebrow">MERCARI LAPTOP MONITOR</p><h1>メルカリ笔记本监测结果</h1></div></div>
+    <p class="hint">点击栏目排序 · 每30秒自动刷新 · 点击商品即可跳转</p>
+  </header>
+  <section class="summary-grid" aria-label="监测概览">
+    <div class="summary-card"><span class="summary-label">当前记录</span><span class="summary-value">${entries.length}</span></div>
+    <div class="summary-card positive"><span class="summary-label">符合提醒</span><span class="summary-value">${qualifiedEntries.length}</span></div>
+    <div class="summary-card signal"><span class="summary-label">24H 新上架</span><span class="summary-value">${recentEntries.length}</span></div>
+    <div class="summary-card"><span class="summary-label">S / A 级</span><span class="summary-value">${topGradeEntries.length}</span></div>
+  </section>
+  <section class="toolbar" aria-label="快捷筛选">
+    <div class="filters" role="group" aria-label="结果筛选">
+      <button type="button" class="filter-button active" data-filter="all">全部<span class="filter-count">${entries.length}</span></button>
+      <button type="button" class="filter-button" data-filter="match">只看符合<span class="filter-count">${qualifiedEntries.length}</span></button>
+      <button type="button" class="filter-button" data-filter="top">S/A级<span class="filter-count">${topGradeEntries.length}</span></button>
+      <button type="button" class="filter-button" data-filter="new">24H新增<span class="filter-count">${recentEntries.length}</span></button>
+    </div>
+    <div class="best-signal"><strong>BEST SIGNAL</strong>${bestEntry ? `<a title="${escapeHtml(bestEntry.title)}" href="${escapeHtml(bestEntry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(bestEntry.grade)}级 · ¥${Number(bestEntry.price).toLocaleString('ja-JP')} · ${escapeHtml(bestEntry.title)}</a>` : '<span>暂无符合条件的商品</span>'}</div>
+  </section>
   <div class="panel"><table>
     <thead><tr>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="grade" data-default-direction="desc">等级 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="price" data-default-direction="asc">价格 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="likes" data-default-direction="desc">いいね数 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
+      <th aria-sort="none"><button type="button" class="sort-button" data-sort="condition" data-default-direction="asc">商品状态 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="title" data-default-direction="asc">商品 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="match" data-default-direction="desc">判断 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="published" data-default-direction="desc">发布时间 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
@@ -182,14 +289,18 @@ function renderResultsPage(entries) {
 <script>
   (() => {
     const tbody = document.querySelector('tbody');
-    const buttons = [...document.querySelectorAll('.sort-button')];
+    const sortButtons = [...document.querySelectorAll('.sort-button')];
+    const filterButtons = [...document.querySelectorAll('.filter-button')];
     const storageKey = 'mercari-laptop-monitor-sort';
+    const filterStorageKey = 'mercari-laptop-monitor-filter';
     let currentSort = null;
+    let currentFilter = 'all';
     try { currentSort = JSON.parse(localStorage.getItem(storageKey)); } catch {}
+    try { currentFilter = localStorage.getItem(filterStorageKey) || 'all'; } catch {}
 
     function valueFor(row, key) {
       if (key === 'title') return row.dataset.title || '';
-      if ((key === 'price' || key === 'likes' || key === 'published') && row.dataset[key] === '') return null;
+      if ((key === 'price' || key === 'likes' || key === 'condition' || key === 'published') && row.dataset[key] === '') return null;
       return Number(row.dataset[key]);
     }
 
@@ -206,7 +317,7 @@ function renderResultsPage(entries) {
         return direction === 'asc' ? comparison : -comparison;
       });
       rows.forEach((row) => tbody.append(row));
-      buttons.forEach((button) => {
+      sortButtons.forEach((button) => {
         const active = button.dataset.sort === key;
         button.querySelector('.sort-icon').textContent = active ? (direction === 'asc' ? '↑' : '↓') : '⇅';
         button.closest('th').setAttribute('aria-sort', active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none');
@@ -217,7 +328,23 @@ function renderResultsPage(entries) {
       }
     }
 
-    buttons.forEach((button) => button.addEventListener('click', () => {
+    function applyFilter(filter, remember = true) {
+      const validFilter = ['all', 'match', 'top', 'new'].includes(filter) ? filter : 'all';
+      [...tbody.querySelectorAll('.result-row')].forEach((row) => {
+        const visible = validFilter === 'all'
+          || (validFilter === 'match' && row.dataset.match === '1')
+          || (validFilter === 'top' && Number(row.dataset.grade) >= 3)
+          || (validFilter === 'new' && row.dataset.new === '1');
+        row.hidden = !visible;
+      });
+      filterButtons.forEach((button) => button.classList.toggle('active', button.dataset.filter === validFilter));
+      currentFilter = validFilter;
+      if (remember) {
+        try { localStorage.setItem(filterStorageKey, validFilter); } catch {}
+      }
+    }
+
+    sortButtons.forEach((button) => button.addEventListener('click', () => {
       const key = button.dataset.sort;
       const direction = currentSort?.key === key
         ? (currentSort.direction === 'asc' ? 'desc' : 'asc')
@@ -225,15 +352,18 @@ function renderResultsPage(entries) {
       applySort(key, direction);
     }));
 
-    if (currentSort && buttons.some((button) => button.dataset.sort === currentSort.key)) {
+    filterButtons.forEach((button) => button.addEventListener('click', () => applyFilter(button.dataset.filter)));
+
+    if (currentSort && sortButtons.some((button) => button.dataset.sort === currentSort.key)) {
       applySort(currentSort.key, currentSort.direction === 'asc' ? 'asc' : 'desc', false);
     }
+    applyFilter(currentFilter, false);
   })();
 </script>
 </body></html>\n`;
 }
 
-async function writeResultsPage() {
+async function writeResultsPageUnlocked() {
   const entries = Object.values(results)
     .sort((a, b) => Number(b.shouldAlert) - Number(a.shouldAlert)
       || String(b.checkedAt).localeCompare(String(a.checkedAt)))
@@ -245,22 +375,50 @@ async function writeResultsPage() {
   ]);
 }
 
+async function syncResultsPage() {
+  await withResultsLock(async () => {
+    results = await loadResults();
+    await writeResultsPageUnlocked();
+  });
+}
+
 async function recordResult(item, assessment) {
-  results[item.id] = {
-    id: item.id,
-    title: item.title,
-    url: item.url,
-    price: assessment.price,
-    score: assessment.score,
-    grade: assessment.grade,
-    shouldAlert: assessment.shouldAlert,
-    reasons: assessment.reasons,
-    likeCount: Number.isInteger(item.likeCount) ? item.likeCount : results[item.id]?.likeCount ?? null,
-    likeCheckedAt: new Date().toISOString(),
-    publishedAt: item.publishedAt ?? results[item.id]?.publishedAt ?? null,
-    checkedAt: new Date().toISOString(),
-  };
-  await writeResultsPage();
+  await withResultsLock(async () => {
+    // 每次写入前重新读取磁盘最新版，避免并行监测进程用旧内存覆盖已补查的数据。
+    results = await loadResults();
+    const previous = results[item.id];
+    results[item.id] = {
+      id: item.id,
+      title: item.title,
+      url: item.url,
+      price: assessment.price,
+      score: assessment.score,
+      grade: assessment.grade,
+      shouldAlert: assessment.shouldAlert,
+      reasons: assessment.reasons,
+      likeCount: Number.isInteger(item.likeCount) ? item.likeCount : previous?.likeCount ?? null,
+      likeCheckedAt: new Date().toISOString(),
+      itemCondition: item.itemCondition ?? previous?.itemCondition ?? null,
+      itemConditionLevel: assessment.itemConditionLevel ?? previous?.itemConditionLevel ?? null,
+      conditionEligible: assessment.conditionEligible,
+      conditionCheckedAt: new Date().toISOString(),
+      publishedAt: item.publishedAt ?? previous?.publishedAt ?? null,
+      checkedAt: new Date().toISOString(),
+    };
+    await writeResultsPageUnlocked();
+  });
+}
+
+async function removeResult(item) {
+  let removed = false;
+  await withResultsLock(async () => {
+    results = await loadResults();
+    if (!results[item.id]) return;
+    delete results[item.id];
+    removed = true;
+    await writeResultsPageUnlocked();
+  });
+  return removed;
 }
 
 async function log(message) {
@@ -275,6 +433,10 @@ function searchUrl(query) {
   url.searchParams.set('status', 'on_sale');
   url.searchParams.set('sort', 'created_time');
   url.searchParams.set('order', 'desc');
+  url.searchParams.set(
+    'item_condition_id',
+    Array.from({ length: config.maxConditionLevel }, (_, index) => index + 1).join(','),
+  );
   if (config.excludeKeywords.length) {
     url.searchParams.set('exclude_keyword', config.excludeKeywords.join(' '));
   }
@@ -337,33 +499,48 @@ async function readSearch(page, query) {
 }
 
 async function readDetail(page, item) {
-  await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  let pageData = { mainText: '', photoUrls: [], likeText: null };
+  const response = await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  let pageData = { mainText: '', photoUrls: [], likeText: null, itemCondition: null };
   for (const delay of [1400, 2200, 3200]) {
     await page.waitForTimeout(delay);
-    pageData = await page.evaluate(() => ({
-      mainText: document.querySelector('main')?.innerText || '',
-      photoUrls: [
+    pageData = await page.evaluate(() => {
+      const conditionElement = document.querySelector('[data-testid="商品の状態"]');
+      const itemCondition = conditionElement
+        ? [...conditionElement.childNodes]
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent)
+          .join(' ')
+          .trim()
+        : null;
+      return {
+        mainText: document.querySelector('main')?.innerText || '',
+        photoUrls: [
         document.querySelector('meta[property="og:image"]')?.content,
         ...[...document.images].flatMap((image) => [
           image.getAttribute('src'),
           image.currentSrc,
           ...(image.getAttribute('srcset') || '').split(',').map((part) => part.trim().split(/\s+/, 1)[0]),
         ]),
-      ].filter(Boolean),
-      likeText: document.querySelector('[data-testid="icon-heart-button"] button')?.innerText?.trim() ?? null,
-    }));
+        ].filter(Boolean),
+        likeText: document.querySelector('[data-testid="icon-heart-button"] button')?.innerText?.trim() ?? null,
+        itemCondition,
+      };
+    });
     if (pageData.mainText.trim()) break;
   }
   if (!pageData.mainText.trim()) throw new Error(`商品详情为空（页面：${page.url()}）`);
+  const availability = detectListingAvailability(pageData.mainText, response?.status() ?? null);
   const ownListing = pageData.mainText.split('商品の情報')[0].slice(0, 12000);
   return {
     ...item,
     detail: ownListing,
     price: item.price ?? parsePrice(ownListing),
     likeCount: parseLikeCount(pageData.likeText),
+    itemCondition: pageData.itemCondition ?? item.itemCondition ?? null,
     publishedAt: extractPublishedAtFromPhotoUrls(pageData.photoUrls, item.id),
     sold: /売り切れました|SOLD/i.test(ownListing),
+    removed: availability.removed,
+    unavailableReason: availability.reason,
   };
 }
 
@@ -393,24 +570,31 @@ async function recordAlert(item, assessment) {
 }
 
 async function markMetadataFailure(item, error) {
-  const existing = results[item.id];
-  if (!existing) return;
-  results[item.id] = {
-    ...existing,
-    likeCheckedAt: new Date().toISOString(),
-    metadataError: error.message,
-  };
-  await writeResultsPage();
+  await withResultsLock(async () => {
+    results = await loadResults();
+    const existing = results[item.id];
+    if (!existing) return;
+    results[item.id] = {
+      ...existing,
+      likeCheckedAt: new Date().toISOString(),
+      conditionCheckedAt: new Date().toISOString(),
+      metadataError: error.message,
+    };
+    await writeResultsPageUnlocked();
+  });
 }
 
-async function refreshResultsMetadata(limit, excludeIds = new Set(), missingLikesOnly = false) {
+async function refreshResultsMetadata(limit, excludeIds = new Set(), uncheckedMetadataOnly = false) {
   if (limit <= 0) return 0;
   const candidates = Object.values(results)
     .filter((entry) => entry.id
       && entry.url
       && !excludeIds.has(entry.id)
-      && (!missingLikesOnly || !Number.isInteger(entry.likeCount)))
-    .sort((a, b) => Number(Number.isInteger(a.likeCount)) - Number(Number.isInteger(b.likeCount))
+      && (!uncheckedMetadataOnly
+        || !Number.isInteger(entry.likeCount)
+        || !Number.isInteger(entry.itemConditionLevel)))
+    .sort((a, b) => (Number(Number.isInteger(a.likeCount)) + Number(Number.isInteger(a.itemConditionLevel)))
+      - (Number(Number.isInteger(b.likeCount)) + Number(Number.isInteger(b.itemConditionLevel)))
       || String(a.likeCheckedAt || '').localeCompare(String(b.likeCheckedAt || '')))
     .slice(0, limit);
   if (!candidates.length) return 0;
@@ -420,11 +604,18 @@ async function refreshResultsMetadata(limit, excludeIds = new Set(), missingLike
   for (const entry of candidates) {
     try {
       const detailed = await readDetail(page, entry);
+      if (detailed.removed) {
+        await removeResult(detailed);
+        refreshed += 1;
+        await log(`已剔除失效商品：${detailed.title}（${detailed.unavailableReason}）`);
+        continue;
+      }
       const assessment = assessCandidate(detailed, config);
       await recordResult(detailed, assessment);
       refreshed += 1;
       const likeText = Number.isInteger(detailed.likeCount) ? detailed.likeCount : '无法取得';
-      await log(`补查资料：いいね ${likeText}；${detailed.title}`);
+      const conditionText = detailed.itemCondition ?? '无法取得';
+      await log(`补查资料：状态 ${conditionText}；いいね ${likeText}；${detailed.title}`);
     } catch (error) {
       await markMetadataFailure(entry, error);
       await log(`补查 ${entry.id} 失败：${error.message}`);
@@ -483,9 +674,18 @@ async function scanOnce() {
   for (const item of pending) {
     try {
       const detailed = await readDetail(detailPage, item);
+      if (detailed.removed) {
+        await removeResult(detailed);
+        await log(`已剔除失效商品：${detailed.title}（${detailed.unavailableReason}）`);
+        if (!diagnose) {
+          state.seen[item.id] = { seenAt: new Date().toISOString(), title: detailed.title, removed: true };
+        }
+        continue;
+      }
       const assessment = assessCandidate(detailed, config);
       const priceText = assessment.price === null ? '价格不明' : `¥${assessment.price.toLocaleString('ja-JP')}`;
-      await log(`[${assessment.grade}级] ${priceText} ${detailed.title} ${detailed.url}`);
+      const conditionText = detailed.itemCondition ?? '状态不明';
+      await log(`[${assessment.grade}级] [状态 ${conditionText}] ${priceText} ${detailed.title} ${detailed.url}`);
       await recordResult(detailed, assessment);
       if (!diagnose) {
         state.seen[item.id] = {
@@ -530,9 +730,9 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-await writeResultsPage();
+await syncResultsPage();
 const startupMessage = refreshMetadata
-  ? `资料补查模式启动；本次最多补查 ${config.detailCheckLimit} 条旧记录。`
+  ? `资料补查模式启动；本次将复查全部 ${missingMetadataCount()} 条缺少资料的旧记录。`
   : `${diagnose ? '诊断模式' : '监测器'}启动；查询 ${config.queries.length} 组，每 ${config.pollMinutes} 分钟检查一次。`;
 await log(startupMessage);
 await log('可点击结果页：results.html（双击 open-results.cmd 打开）');
@@ -540,7 +740,7 @@ try {
   browser = await launchBrowser();
   do {
     try {
-      if (refreshMetadata) await refreshResultsMetadata(config.detailCheckLimit, new Set(), true);
+      if (refreshMetadata) await refreshResultsMetadata(Number.POSITIVE_INFINITY, new Set(), true);
       else await scanOnce();
     } catch (error) {
       await log(`本轮失败：${error.message}`);

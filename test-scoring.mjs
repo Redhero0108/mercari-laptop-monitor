@@ -11,9 +11,16 @@ const strong = assessCandidate({
   title: 'HP EliteBook 630 G10 第13世代 i5-1335U 32GB SSD1TB Windows11 Pro',
   detail: '13.3インチ FHD バッテリー未消耗',
   price: 85800,
+  itemCondition: '目立った傷や汚れなし',
 });
 assert.equal(strong.shouldAlert, true);
 assert.ok(strong.score >= 58);
+assert.equal(assessCandidate({
+  title: 'HP EliteBook 630 G10 第13世代 i5-1335U 32GB SSD1TB Windows11 Pro',
+  detail: '13.3インチ FHD',
+  price: 85800,
+  itemCondition: '目立った傷や汚れなし',
+}, { maxConditionLevel: 2 }).shouldAlert, false);
 
 const weak = assessCandidate({
   title: 'Windows11 32GB SSD1TB Intel Celeron N5095',
@@ -40,12 +47,14 @@ const tenthGen = assessCandidate({
   title: 'HP ProBook Core i5-10210U 32GB SSD 1TB Windows11',
   detail: '第10世代 1920x1080',
   price: 30000,
+  itemCondition: '未使用に近い',
 }, { minIntelGeneration: 10 });
 assert.equal(tenthGen.shouldAlert, true);
 assert.equal(assessCandidate({
   title: tenthGen.cpu.label + ' HP ProBook Core i5-10210U 32GB SSD 1TB Windows11',
   detail: '第10世代 1920x1080',
   price: 30000,
+  itemCondition: '未使用に近い',
 }, { minIntelGeneration: 11 }).shouldAlert, false);
 
 const junk = assessCandidate({
@@ -58,6 +67,7 @@ const ssd512 = assessCandidate({
   title: 'HP EliteBook 第13世代 Core i5-1335U 32GB SSD512GB Windows11 Pro',
   detail: 'FHD バッテリー良好',
   price: 76800,
+  itemCondition: '新品、未使用',
 });
 assert.equal(ssd512.has512GB, true);
 assert.equal(ssd512.has1TB, false);
@@ -71,5 +81,22 @@ const hdd512 = assessCandidate({
 });
 assert.equal(hdd512.hasSSD, false);
 assert.equal(hdd512.shouldAlert, false);
+
+const conditionLevel4 = assessCandidate({
+  title: 'HP EliteBook 第13世代 Core i5-1335U 32GB SSD1TB Windows11 Pro',
+  detail: 'FHD バッテリー良好',
+  price: 76800,
+  itemCondition: 'やや傷や汚れあり',
+});
+assert.equal(conditionLevel4.itemConditionLevel, 4);
+assert.equal(conditionLevel4.conditionEligible, false);
+assert.equal(conditionLevel4.shouldAlert, false);
+
+const unknownCondition = assessCandidate({
+  title: 'HP EliteBook 第13世代 Core i5-1335U 32GB SSD1TB Windows11 Pro',
+  price: 76800,
+});
+assert.equal(unknownCondition.conditionEligible, false);
+assert.equal(unknownCondition.shouldAlert, false);
 
 console.log('scoring tests: OK');

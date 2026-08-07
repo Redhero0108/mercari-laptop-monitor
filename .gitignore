@@ -3,4 +3,5 @@ alerts.jsonl
 monitor.log
 results.json
 results.html
+.results.lock
 .browser-profile/

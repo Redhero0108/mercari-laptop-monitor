@@ -1,3 +1,5 @@
+import { conditionLevel } from './conditions.mjs';
+
 const BUSINESS_MODELS = /elitebook|probook|latitude|thinkpad|dynabook\s*g\d|lifebook\s*u|let'?s\s*note|vaio\s*pro/i;
 const SEVERE_DEFECTS = /ジャンク|junk|部品取り|起動不可|電源(?:が)?入らない|ssdなし|ストレージなし|画面割れ|液晶割れ|bios(?:ロック|パスワード)|パスワード不明/i;
 
@@ -84,7 +86,7 @@ export function detectCpu(text) {
   return { family: 'unknown', label: 'CPU型号不明', eligible: false, fairPrice: 70000, score: -15 };
 }
 
-export function assessCandidate({ title, detail = '', price = null }, config = {}) {
+export function assessCandidate({ title, detail = '', price = null, itemCondition = null }, config = {}) {
   const text = compact(`${title} ${detail}`);
   const resolvedPrice = price ?? parsePrice(text);
   const cpu = { ...detectCpu(text) };
@@ -103,6 +105,19 @@ export function assessCandidate({ title, detail = '', price = null }, config = {
   const hasWindows11 = /windows\s*11|win\s*11/i.test(text);
   const excludedPlatform = /macbook|chromebook|chrome\s*os|iMac/i.test(text);
   const severeDefect = hasSevereDefect(text);
+  const itemConditionLevel = conditionLevel(itemCondition);
+  const maxConditionLevel = Number(config.maxConditionLevel ?? 3);
+  const conditionEligible = itemConditionLevel !== null && itemConditionLevel <= maxConditionLevel;
+
+  if (conditionEligible) {
+    reasons.push(`商品状态第${itemConditionLevel}级`);
+  } else if (itemConditionLevel !== null) {
+    score -= 30;
+    reasons.push(`商品状态第${itemConditionLevel}级，不在筛选范围`);
+  } else {
+    score -= 20;
+    reasons.push('商品状态无法确认');
+  }
 
   if (has32GB) {
     score += 13;
@@ -179,6 +194,7 @@ export function assessCandidate({ title, detail = '', price = null }, config = {
       && has512GB
       && hasSSD
       && cpu.eligible
+      && conditionEligible
       && !severeDefect
       && !excludedPlatform
       && resolvedPrice !== null
@@ -187,5 +203,18 @@ export function assessCandidate({ title, detail = '', price = null }, config = {
   );
 
   const grade = score >= 75 ? 'S' : score >= 60 ? 'A' : score >= 45 ? 'B' : 'C';
-  return { score, grade, shouldAlert, price: resolvedPrice, cpu, has32GB, has512GB, has1TB, hasSSD, reasons };
+  return {
+    score,
+    grade,
+    shouldAlert,
+    price: resolvedPrice,
+    cpu,
+    has32GB,
+    has512GB,
+    has1TB,
+    hasSSD,
+    itemConditionLevel,
+    conditionEligible,
+    reasons,
+  };
 }
