@@ -98,6 +98,8 @@ export function assessCandidate({ title, detail = '', price = null }, config = {
 
   const has32GB = /(?:メモリ|memory|ram)?\s*32\s*(?:gb|g)\b/i.test(text);
   const has1TB = /(?:1\s*tb|1000\s*gb|1024\s*gb)\b/i.test(text);
+  const has512GB = has1TB || /512\s*(?:gb|g)\b/i.test(text);
+  const hasSSD = /ssd|nvme|m\.2/i.test(text);
   const hasWindows11 = /windows\s*11|win\s*11/i.test(text);
   const excludedPlatform = /macbook|chromebook|chrome\s*os|iMac/i.test(text);
   const severeDefect = hasSevereDefect(text);
@@ -111,8 +113,15 @@ export function assessCandidate({ title, detail = '', price = null }, config = {
   if (has1TB) {
     score += 13;
     reasons.push('1TB存储');
+  } else if (has512GB) {
+    score += 10;
+    reasons.push('512GB存储');
   } else {
     score -= 30;
+  }
+  if (!hasSSD) {
+    score -= 25;
+    reasons.push('未确认SSD');
   }
 
   score += cpu.score;
@@ -167,7 +176,8 @@ export function assessCandidate({ title, detail = '', price = null }, config = {
   const maxPriceYen = Number(config.maxPriceYen ?? 95000);
   const shouldAlert = Boolean(
     has32GB
-      && has1TB
+      && has512GB
+      && hasSSD
       && cpu.eligible
       && !severeDefect
       && !excludedPlatform
@@ -177,5 +187,5 @@ export function assessCandidate({ title, detail = '', price = null }, config = {
   );
 
   const grade = score >= 75 ? 'S' : score >= 60 ? 'A' : score >= 45 ? 'B' : 'C';
-  return { score, grade, shouldAlert, price: resolvedPrice, cpu, has32GB, has1TB, reasons };
+  return { score, grade, shouldAlert, price: resolvedPrice, cpu, has32GB, has512GB, has1TB, hasSSD, reasons };
 }

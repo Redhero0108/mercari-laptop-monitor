@@ -54,4 +54,22 @@ const junk = assessCandidate({
 });
 assert.equal(junk.shouldAlert, false);
 
+const ssd512 = assessCandidate({
+  title: 'HP EliteBook 第13世代 Core i5-1335U 32GB SSD512GB Windows11 Pro',
+  detail: 'FHD バッテリー良好',
+  price: 76800,
+});
+assert.equal(ssd512.has512GB, true);
+assert.equal(ssd512.has1TB, false);
+assert.equal(ssd512.hasSSD, true);
+assert.equal(ssd512.shouldAlert, true);
+
+const hdd512 = assessCandidate({
+  title: 'HP EliteBook 第13世代 Core i5-1335U 32GB HDD 512GB Windows11 Pro',
+  detail: 'FHD バッテリー良好',
+  price: 50000,
+});
+assert.equal(hdd512.hasSSD, false);
+assert.equal(hdd512.shouldAlert, false);
+
 console.log('scoring tests: OK');
