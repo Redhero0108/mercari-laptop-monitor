@@ -20,17 +20,20 @@ const LOG_FILE = path.join(APP_DIR, 'monitor.log');
 const RESULTS_DATA_FILE = path.join(APP_DIR, 'results.json');
 const RESULTS_HTML_FILE = path.join(APP_DIR, 'results.html');
 const RESULTS_LOCK_FILE = path.join(APP_DIR, '.results.lock');
+const PID_FILE = path.join(APP_DIR, 'monitor.pid');
 const SEARCH_BASE = 'https://jp.mercari.com/search';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150 Safari/537.36';
 
 const args = new Set(process.argv.slice(2));
 const diagnose = args.has('--diagnose');
 const refreshMetadata = args.has('--refresh-metadata');
+const refreshLikes = args.has('--refresh-likes');
 const pruneInactive = args.has('--prune-inactive');
-const once = diagnose || refreshMetadata || pruneInactive || args.has('--once');
+const once = diagnose || refreshMetadata || refreshLikes || pruneInactive || args.has('--once');
 const alertExisting = args.has('--alert-existing');
-const noNotify = diagnose || pruneInactive || args.has('--no-notify');
+const noNotify = diagnose || refreshLikes || pruneInactive || args.has('--no-notify');
 const showBrowser = args.has('--show-browser');
+const persistentMonitor = !once;
 
 const defaults = {
   pollMinutes: 5,
@@ -41,6 +44,8 @@ const defaults = {
   maxConditionLevel: 3,
   detailCheckLimit: 15,
   metadataRefreshLimit: 5,
+  likesRefreshMinutes: 10,
+  likesRefreshConcurrency: 3,
   headless: true,
   notify: true,
   excludeKeywords: ['ジャンク', 'JUNK', '部品取り'],
@@ -57,6 +62,8 @@ const config = { ...defaults, ...JSON.parse(await readFile(CONFIG_FILE, 'utf8'))
 config.pollMinutes = Math.max(2, Number(config.pollMinutes) || 5);
 config.detailCheckLimit = Math.max(1, Math.min(30, Number(config.detailCheckLimit) || 15));
 config.metadataRefreshLimit = Math.max(0, Math.min(10, Number(config.metadataRefreshLimit) || 0));
+config.likesRefreshMinutes = Math.max(5, Number(config.likesRefreshMinutes) || 10);
+config.likesRefreshConcurrency = Math.max(1, Math.min(5, Number(config.likesRefreshConcurrency) || 3));
 config.maxConditionLevel = Math.max(1, Math.min(6, Number(config.maxConditionLevel) || 3));
 config.queries = Array.isArray(config.queries) && config.queries.length ? config.queries : defaults.queries;
 config.excludeKeywords = Array.isArray(config.excludeKeywords)
@@ -66,6 +73,8 @@ config.excludeKeywords = Array.isArray(config.excludeKeywords)
 let state = await loadState();
 let results = await loadResults();
 let browser;
+let nextSearchAt = 0;
+let nextLikesRefreshAt = 0;
 
 function missingMetadataCount() {
   return Object.values(results).filter((entry) => entry.id
@@ -100,6 +109,26 @@ async function loadResults() {
   } catch {
     return {};
   }
+}
+
+async function claimMonitorPid() {
+  if (!persistentMonitor) return;
+  const existingPid = Number.parseInt(await readFile(PID_FILE, 'utf8').catch(() => ''), 10);
+  if (Number.isInteger(existingPid) && existingPid > 0 && existingPid !== process.pid) {
+    let isRunning = false;
+    try {
+      process.kill(existingPid, 0);
+      isRunning = true;
+    } catch {}
+    if (isRunning) throw new Error(`监测器已经在后台运行（PID ${existingPid}）`);
+  }
+  await writeFile(PID_FILE, `${process.pid}\n`, 'utf8');
+}
+
+async function clearMonitorPid() {
+  if (!persistentMonitor) return;
+  const existingPid = Number.parseInt(await readFile(PID_FILE, 'utf8').catch(() => ''), 10);
+  if (existingPid === process.pid) await unlink(PID_FILE).catch(() => {});
 }
 
 async function withResultsLock(action) {
@@ -138,6 +167,10 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function isAllowedConditionLevel(level) {
+  return Number.isInteger(level) && level >= 1 && level <= config.maxConditionLevel;
+}
+
 function renderResultsPage(entries) {
   const recentCutoff = Date.now() - 24 * 60 * 60 * 1000;
   const isRecentEntry = (entry) => entry.publishedAt && Date.parse(entry.publishedAt) >= recentCutoff;
@@ -152,6 +185,14 @@ function renderResultsPage(entries) {
       const likeCount = Number.isInteger(entry.likeCount)
         ? entry.likeCount.toLocaleString('ja-JP')
         : entry.likeCheckedAt ? '无法取得' : '尚未检查';
+      const likeCheckedMs = Date.parse(entry.likeCheckedAt) || 0;
+      const likeFresh = likeCheckedMs > 0
+        && Date.now() - likeCheckedMs <= Math.max(15, config.likesRefreshMinutes * 2) * 60_000;
+      const likeCheckedText = likeCheckedMs
+        ? new Date(likeCheckedMs).toLocaleString('zh-CN', { hour12: false })
+        : '尚未更新';
+      const likeStatusText = likeFresh ? '数据新鲜' : '等待后台更新';
+      const likeCellTitle = `いいね最后更新：${likeCheckedText}（${likeStatusText}）`;
       const conditionLevel = Number.isInteger(entry.itemConditionLevel) ? entry.itemConditionLevel : null;
       const itemCondition = conditionLevel === null
         ? entry.conditionCheckedAt ? '无法取得' : '尚未检查'
@@ -167,7 +208,7 @@ function renderResultsPage(entries) {
       return `<tr class="result-row" data-grade="${gradeRank}" data-price="${entry.price ?? ''}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-condition="${conditionLevel ?? ''}" data-title="${escapeHtml(entry.title)}" data-match="${shouldAlert ? 1 : 0}" data-new="${isRecent ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-time="${Date.parse(entry.checkedAt) || 0}">
         <td class="grade-cell"><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">级</span></td>
         <td class="numeric-cell">${escapeHtml(price)}</td>
-        <td class="numeric-cell">${escapeHtml(likeCount)}</td>
+        <td class="numeric-cell like-cell" title="${escapeHtml(likeCellTitle)}"><span>${escapeHtml(likeCount)}</span><span class="freshness-dot ${likeFresh ? 'is-fresh' : 'is-stale'}" aria-hidden="true"></span></td>
         <td class="condition-cell">${escapeHtml(itemCondition)}</td>
         <td class="product-cell"><div class="product-title-line">${newBadge}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}</a></div><div class="reasons" title="${escapeHtml(reasons)}">${escapeHtml(reasons)}</div></td>
         <td class="status-cell">${status}</td>
@@ -233,6 +274,10 @@ function renderResultsPage(entries) {
     td:first-child { position: sticky; left: 0; z-index: 1; background: #fffefa; box-shadow: 1px 0 #e2dacb; }
     tbody tr:hover td:first-child { background: #fbf4e7; }
     .grade-cell, .numeric-cell, .condition-cell, .status-cell, .date-cell, .action-cell { width: 1%; white-space: nowrap; }
+    .like-cell { font-variant-numeric: tabular-nums; }
+    .freshness-dot { display: inline-block; width: 7px; height: 7px; margin-left: 7px; border-radius: 50%; vertical-align: 1px; }
+    .freshness-dot.is-fresh { background: #3f8766; box-shadow: 0 0 0 3px rgba(63,135,102,.12); }
+    .freshness-dot.is-stale { background: #b58a3d; box-shadow: 0 0 0 3px rgba(181,138,61,.12); }
     .product-cell { width: 100%; min-width: 520px; }
     .product-title-line { display: flex; align-items: center; gap: 7px; max-width: 720px; min-width: 0; }
     .title, .reasons { display: block; max-width: 720px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -255,7 +300,7 @@ function renderResultsPage(entries) {
 <body><main>
   <header class="page-header">
     <div class="brand-lockup"><span class="brand-mark">M</span><div><p class="eyebrow">MERCARI LAPTOP MONITOR</p><h1>メルカリ笔记本监测结果</h1></div></div>
-    <p class="hint">点击栏目排序 · 每30秒自动刷新 · 点击商品即可跳转</p>
+    <p class="hint">点击栏目排序 · 页面每30秒刷新 · いいね每${escapeHtml(config.likesRefreshMinutes)}分钟后台更新</p>
   </header>
   <section class="summary-grid" aria-label="监测概览">
     <div class="summary-card"><span class="summary-label">当前记录</span><span class="summary-value">${entries.length}</span></div>
@@ -366,6 +411,7 @@ function renderResultsPage(entries) {
 
 async function writeResultsPageUnlocked() {
   const entries = Object.values(results)
+    .filter((entry) => isAllowedConditionLevel(entry.itemConditionLevel))
     .sort((a, b) => Number(b.shouldAlert) - Number(a.shouldAlert)
       || String(b.checkedAt).localeCompare(String(a.checkedAt)))
     .slice(0, 500);
@@ -408,6 +454,40 @@ async function recordResult(item, assessment) {
     };
     await writeResultsPageUnlocked();
   });
+}
+
+async function recordLiveResult(item, assessment) {
+  let change = null;
+  await withResultsLock(async () => {
+    results = await loadResults();
+    const previous = results[item.id];
+    if (!previous) return;
+    const now = new Date().toISOString();
+    const hasLikeCount = Number.isInteger(item.likeCount);
+    results[item.id] = {
+      ...previous,
+      title: item.title ?? previous.title,
+      url: item.url ?? previous.url,
+      price: assessment.price,
+      score: assessment.score,
+      grade: assessment.grade,
+      shouldAlert: assessment.shouldAlert,
+      reasons: assessment.reasons,
+      likeCount: hasLikeCount ? item.likeCount : previous.likeCount ?? null,
+      likeCheckedAt: hasLikeCount ? now : previous.likeCheckedAt ?? null,
+      likeAttemptedAt: now,
+      likeRefreshError: hasLikeCount ? null : '商品页未返回いいね数',
+      itemCondition: item.itemCondition ?? previous.itemCondition ?? null,
+      itemConditionLevel: assessment.itemConditionLevel ?? previous.itemConditionLevel ?? null,
+      conditionEligible: assessment.conditionEligible,
+      conditionCheckedAt: now,
+      publishedAt: item.publishedAt ?? previous.publishedAt ?? null,
+      checkedAt: now,
+    };
+    change = { previousLike: previous.likeCount, currentLike: results[item.id].likeCount, hasLikeCount };
+    await writeResultsPageUnlocked();
+  });
+  return change;
 }
 
 async function removeResult(item) {
@@ -530,7 +610,7 @@ async function readDetail(page, item) {
           ?.textContent?.trim() ?? null,
       };
     });
-    if (pageData.mainText.trim()) break;
+    if (pageData.mainText.trim() && (pageData.likeText !== null || pageData.soldButtonText !== null)) break;
   }
   if (!pageData.mainText.trim()) throw new Error(`商品详情为空（页面：${page.url()}）`);
   const availability = detectListingAvailability(
@@ -542,7 +622,7 @@ async function readDetail(page, item) {
   return {
     ...item,
     detail: ownListing,
-    price: item.price ?? parsePrice(ownListing),
+    price: parsePrice(ownListing) ?? item.price,
     likeCount: parseLikeCount(pageData.likeText),
     itemCondition: pageData.itemCondition ?? item.itemCondition ?? null,
     publishedAt: extractPublishedAtFromPhotoUrls(pageData.photoUrls, item.id),
@@ -619,6 +699,12 @@ async function refreshResultsMetadata(limit, excludeIds = new Set(), uncheckedMe
         continue;
       }
       const assessment = assessCandidate(detailed, config);
+      if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
+        await removeResult(detailed);
+        refreshed += 1;
+        await log(`已剔除商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
+        continue;
+      }
       await recordResult(detailed, assessment);
       refreshed += 1;
       const likeText = Number.isInteger(detailed.likeCount) ? detailed.likeCount : '无法取得';
@@ -631,6 +717,63 @@ async function refreshResultsMetadata(limit, excludeIds = new Set(), uncheckedMe
   }
   await page.close();
   return refreshed;
+}
+
+async function refreshAllLiveResults() {
+  const refreshStartedAt = Date.now();
+  nextLikesRefreshAt = refreshStartedAt + config.likesRefreshMinutes * 60_000;
+  results = await loadResults();
+  const candidates = Object.values(results)
+    .filter((entry) => entry.id && entry.url)
+    .sort((a, b) => String(a.likeCheckedAt || '').localeCompare(String(b.likeCheckedAt || '')));
+  if (!candidates.length) {
+    return { checked: 0, changed: 0, removed: 0, failed: 0 };
+  }
+
+  let cursor = 0;
+  const totals = { checked: 0, changed: 0, removed: 0, filtered: 0, failed: 0 };
+  const workerCount = Math.min(config.likesRefreshConcurrency, candidates.length);
+  await log(`开始刷新 ${candidates.length} 件商品的价格、いいね和状态（${workerCount} 路并行）。`);
+
+  async function worker() {
+    const page = await browser.newPage();
+    try {
+      while (cursor < candidates.length) {
+        const entry = candidates[cursor];
+        cursor += 1;
+        try {
+          const detailed = await readDetail(page, entry);
+          totals.checked += 1;
+          if (detailed.removed || detailed.sold) {
+            if (await removeResult(detailed)) totals.removed += 1;
+            await log(`已剔除失效商品：${detailed.title}（${detailed.unavailableReason}）`);
+            continue;
+          }
+          const assessment = assessCandidate(detailed, config);
+          if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
+            if (await removeResult(detailed)) totals.filtered += 1;
+            await log(`已剔除商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
+            continue;
+          }
+          const change = await recordLiveResult(detailed, assessment);
+          if (!change?.hasLikeCount) totals.failed += 1;
+          if (change?.hasLikeCount && change.previousLike !== change.currentLike) {
+            totals.changed += 1;
+            await log(`いいね更新：${change.previousLike ?? '未取得'} → ${change.currentLike}；${detailed.title}`);
+          }
+        } catch (error) {
+          totals.failed += 1;
+          await log(`实时资料更新 ${entry.id} 失败：${error.message}`);
+        }
+      }
+    } finally {
+      await page.close().catch(() => {});
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  await log(`实时资料刷新完成：检查 ${totals.checked} 件，いいね变化 ${totals.changed} 件，失效剔除 ${totals.removed} 件，状态过滤 ${totals.filtered} 件，未取得 ${totals.failed} 件。`);
+  return totals;
 }
 
 async function scanOnce() {
@@ -696,6 +839,18 @@ async function scanOnce() {
         continue;
       }
       const assessment = assessCandidate(detailed, config);
+      if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
+        await removeResult(detailed);
+        await log(`已跳过商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
+        if (!diagnose) {
+          state.seen[item.id] = {
+            seenAt: new Date().toISOString(),
+            title: detailed.title,
+            itemConditionLevel: assessment.itemConditionLevel,
+          };
+        }
+        continue;
+      }
       const priceText = assessment.price === null ? '价格不明' : `¥${assessment.price.toLocaleString('ja-JP')}`;
       const conditionText = detailed.itemCondition ?? '状态不明';
       await log(`[${assessment.grade}级] [状态 ${conditionText}] ${priceText} ${detailed.title} ${detailed.url}`);
@@ -729,12 +884,13 @@ async function scanOnce() {
   }
   const refreshedCount = diagnose
     ? 0
-    : await refreshResultsMetadata(config.metadataRefreshLimit, new Set(pending.map((item) => item.id)));
+    : await refreshResultsMetadata(config.metadataRefreshLimit, new Set(pending.map((item) => item.id)), true);
   await log(`本轮检查 ${pending.length} 件新商品，符合提醒条件 ${alertCount} 件；补查旧记录 ${refreshedCount} 件。`);
 }
 
 async function shutdown() {
   if (browser) await browser.close().catch(() => {});
+  await clearMonitorPid();
 }
 
 process.on('SIGINT', async () => {
@@ -743,12 +899,21 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
+process.on('SIGTERM', async () => {
+  await log('收到后台停止指令，正在关闭。');
+  await shutdown();
+  process.exit(0);
+});
+
+await claimMonitorPid();
 await syncResultsPage();
 const startupMessage = pruneInactive
   ? `失效商品清理模式启动；本次将检查全部 ${Object.keys(results).length} 条结果。`
-  : refreshMetadata
-    ? `资料补查模式启动；本次将复查全部 ${missingMetadataCount()} 条缺少资料的旧记录。`
-    : `${diagnose ? '诊断模式' : '监测器'}启动；查询 ${config.queries.length} 组，每 ${config.pollMinutes} 分钟检查一次。`;
+  : refreshLikes
+    ? `实时资料刷新模式启动；本次将更新全部 ${Object.keys(results).length} 条结果。`
+    : refreshMetadata
+      ? `资料补查模式启动；本次将复查全部 ${missingMetadataCount()} 条缺少资料的旧记录。`
+      : `${diagnose ? '诊断模式' : '监测器'}启动；每 ${config.pollMinutes} 分钟搜索新品，每 ${config.likesRefreshMinutes} 分钟刷新全部商品资料。`;
 await log(startupMessage);
 await log('可点击结果页：results.html（双击 open-results.cmd 打开）');
 try {
@@ -756,13 +921,22 @@ try {
   do {
     try {
       if (pruneInactive) await refreshResultsMetadata(Number.POSITIVE_INFINITY, new Set(), false);
+      else if (refreshLikes) await refreshAllLiveResults();
       else if (refreshMetadata) await refreshResultsMetadata(Number.POSITIVE_INFINITY, new Set(), true);
-      else await scanOnce();
+      else {
+        if (Date.now() >= nextSearchAt) {
+          nextSearchAt = Date.now() + config.pollMinutes * 60_000;
+          await scanOnce();
+        }
+        if (Date.now() >= nextLikesRefreshAt) await refreshAllLiveResults();
+      }
     } catch (error) {
       await log(`本轮失败：${error.message}`);
     }
     if (once) break;
-    await new Promise((resolve) => setTimeout(resolve, config.pollMinutes * 60_000));
+    const nextWakeAt = Math.min(nextSearchAt, nextLikesRefreshAt);
+    const waitMs = Math.max(1000, nextWakeAt - Date.now());
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   } while (true);
 } finally {
   await shutdown();

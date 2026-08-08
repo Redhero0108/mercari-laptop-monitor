@@ -7,6 +7,8 @@
   "maxConditionLevel": 3,
   "detailCheckLimit": 15,
   "metadataRefreshLimit": 5,
+  "likesRefreshMinutes": 10,
+  "likesRefreshConcurrency": 3,
   "headless": true,
   "notify": true,
   "excludeKeywords": [
