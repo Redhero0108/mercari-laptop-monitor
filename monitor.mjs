@@ -224,7 +224,7 @@ function renderResultsPage(entries) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="refresh" content="30">
+  <meta http-equiv="refresh" content="300">
   <title>メルカリ笔记本监测结果</title>
   <style>
     :root { color-scheme: light; font-family: Inter, "Segoe UI", "Microsoft YaHei", "Yu Gothic UI", sans-serif; }
@@ -300,7 +300,7 @@ function renderResultsPage(entries) {
 <body><main>
   <header class="page-header">
     <div class="brand-lockup"><span class="brand-mark">M</span><div><p class="eyebrow">MERCARI LAPTOP MONITOR</p><h1>メルカリ笔记本监测结果</h1></div></div>
-    <p class="hint">点击栏目排序 · 页面每30秒刷新 · いいね每${escapeHtml(config.likesRefreshMinutes)}分钟后台更新</p>
+    <p class="hint">点击栏目排序 · 页面每5分钟刷新 · いいね每${escapeHtml(config.likesRefreshMinutes)}分钟后台更新</p>
   </header>
   <section class="summary-grid" aria-label="监测概览">
     <div class="summary-card"><span class="summary-label">当前记录</span><span class="summary-value">${entries.length}</span></div>
