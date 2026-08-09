@@ -21,6 +21,7 @@ const RESULTS_DATA_FILE = path.join(APP_DIR, 'results.json');
 const RESULTS_HTML_FILE = path.join(APP_DIR, 'results.html');
 const RESULTS_LOCK_FILE = path.join(APP_DIR, '.results.lock');
 const PID_FILE = path.join(APP_DIR, 'monitor.pid');
+const STATUS_SCRIPT_FILE = path.join(APP_DIR, 'monitor-status.js');
 const SEARCH_BASE = 'https://jp.mercari.com/search';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150 Safari/537.36';
 
@@ -75,6 +76,10 @@ let results = await loadResults();
 let browser;
 let nextSearchAt = 0;
 let nextLikesRefreshAt = 0;
+let heartbeatTimer;
+let monitorPhase = '正在启动';
+let monitorMessage = '正在连接浏览器';
+let statusWriteQueue = Promise.resolve();
 
 function missingMetadataCount() {
   return Object.values(results).filter((entry) => entry.id
@@ -129,6 +134,42 @@ async function clearMonitorPid() {
   if (!persistentMonitor) return;
   const existingPid = Number.parseInt(await readFile(PID_FILE, 'utf8').catch(() => ''), 10);
   if (existingPid === process.pid) await unlink(PID_FILE).catch(() => {});
+}
+
+function writeMonitorStatus(running = true, phase = monitorPhase, message = monitorMessage) {
+  if (!persistentMonitor) return Promise.resolve();
+  const payload = {
+    running,
+    phase,
+    message,
+    pid: process.pid,
+    heartbeatAt: new Date().toISOString(),
+  };
+  const script = `window.__MERCARI_MONITOR_STATUS__ = ${JSON.stringify(payload)};\n`;
+  statusWriteQueue = statusWriteQueue
+    .catch(() => {})
+    .then(() => writeFile(STATUS_SCRIPT_FILE, script, 'utf8'));
+  return statusWriteQueue;
+}
+
+async function setMonitorPhase(phase, message = '') {
+  monitorPhase = phase;
+  monitorMessage = message;
+  await writeMonitorStatus().catch(() => {});
+}
+
+function startHeartbeat() {
+  if (!persistentMonitor || heartbeatTimer) return;
+  heartbeatTimer = setInterval(() => {
+    writeMonitorStatus().catch(() => {});
+  }, 20_000);
+  heartbeatTimer.unref();
+}
+
+async function stopHeartbeat() {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = undefined;
+  await writeMonitorStatus(false, '已停止', '请双击 open-results.cmd 启动后台监测');
 }
 
 async function withResultsLock(action) {
@@ -233,6 +274,16 @@ function renderResultsPage(entries) {
     main { width: min(1880px, calc(100% - 40px)); margin: 30px auto 46px; }
     .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin: 0 4px 20px; }
     .brand-lockup { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .header-meta { display: flex; align-items: flex-end; flex-direction: column; gap: 8px; }
+    .monitor-status { display: inline-flex; align-items: center; gap: 8px; min-height: 28px; padding: 5px 10px; border: 1px solid #d8cdb7; border-radius: 999px; background: rgba(255,254,250,.86); color: #77736b; font-size: 11px; font-weight: 750; white-space: nowrap; box-shadow: 0 3px 10px rgba(70,57,35,.04); }
+    .monitor-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #9b958a; box-shadow: 0 0 0 3px rgba(155,149,138,.12); }
+    .monitor-status.is-online { border-color: #a8c8b7; color: #2f7254; }
+    .monitor-status.is-online .monitor-status-dot { background: #3f8766; box-shadow: 0 0 0 3px rgba(63,135,102,.14); }
+    .monitor-status.is-busy { border-color: #cbb27e; color: #8b631f; }
+    .monitor-status.is-busy .monitor-status-dot { background: #b58a3d; box-shadow: 0 0 0 3px rgba(181,138,61,.14); animation: status-pulse 1.4s ease-in-out infinite; }
+    .monitor-status.is-offline { border-color: #d8b2aa; color: #9a5145; }
+    .monitor-status.is-offline .monitor-status-dot { background: #b76b5d; box-shadow: 0 0 0 3px rgba(183,107,93,.12); }
+    @keyframes status-pulse { 50% { opacity: .45; transform: scale(.82); } }
     .brand-mark { display: grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; border: 1px solid #a77a2d; border-radius: 12px; background: linear-gradient(145deg, #d8b86e, #9b6e25 72%); color: #fffaf0; font: 900 23px/1 Georgia, serif; box-shadow: 0 7px 20px rgba(133,95,31,.16), inset 0 1px rgba(255,255,255,.4); }
     .eyebrow { margin: 0 0 4px; color: #9a732f; font-size: 10px; font-weight: 800; letter-spacing: .18em; }
     h1 { margin: 0; color: #25282d; font-size: clamp(22px, 2vw, 30px); font-weight: 760; letter-spacing: .015em; white-space: nowrap; }
@@ -294,13 +345,16 @@ function renderResultsPage(entries) {
     .open { display: inline-block; padding: 8px 13px; border: 1px solid #8d6422; border-radius: 8px; background: linear-gradient(145deg, #b58738, #8f6422); color: #fffaf0; font-weight: 800; text-decoration: none; white-space: nowrap; box-shadow: 0 5px 14px rgba(126,88,28,.17); transition: transform .15s ease, filter .15s ease; }
     .open:hover { filter: brightness(1.1); transform: translateY(-1px); }
     .empty { padding: 48px; color: #817b72; text-align: center; }
-    @media (max-width: 1050px) { .page-header { align-items: flex-start; flex-direction: column; gap: 10px; } .hint { text-align: left; } .summary-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); } .toolbar { align-items: flex-start; flex-direction: column; } }
+    @media (max-width: 1050px) { .page-header { align-items: flex-start; flex-direction: column; gap: 10px; } .header-meta { align-items: flex-start; } .hint { text-align: left; } .summary-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); } .toolbar { align-items: flex-start; flex-direction: column; } }
   </style>
 </head>
 <body><main>
   <header class="page-header">
     <div class="brand-lockup"><span class="brand-mark">M</span><div><p class="eyebrow">MERCARI LAPTOP MONITOR</p><h1>メルカリ笔记本监测结果</h1></div></div>
-    <p class="hint">点击栏目排序 · 页面每5分钟刷新 · いいね每${escapeHtml(config.likesRefreshMinutes)}分钟后台更新</p>
+    <div class="header-meta">
+      <div id="monitor-status" class="monitor-status" title="未运行时请双击 open-results.cmd"><span class="monitor-status-dot" aria-hidden="true"></span><span id="monitor-status-text">正在检测后台状态…</span></div>
+      <p class="hint">点击栏目排序 · 页面每5分钟刷新 · いいね每${escapeHtml(config.likesRefreshMinutes)}分钟后台更新</p>
+    </div>
   </header>
   <section class="summary-grid" aria-label="监测概览">
     <div class="summary-card"><span class="summary-label">当前记录</span><span class="summary-value">${entries.length}</span></div>
@@ -337,12 +391,50 @@ function renderResultsPage(entries) {
     const tbody = document.querySelector('tbody');
     const sortButtons = [...document.querySelectorAll('.sort-button')];
     const filterButtons = [...document.querySelectorAll('.filter-button')];
+    const monitorStatus = document.querySelector('#monitor-status');
+    const monitorStatusText = document.querySelector('#monitor-status-text');
     const storageKey = 'mercari-laptop-monitor-sort';
     const filterStorageKey = 'mercari-laptop-monitor-filter';
     let currentSort = null;
     let currentFilter = 'all';
     try { currentSort = JSON.parse(localStorage.getItem(storageKey)); } catch {}
     try { currentFilter = localStorage.getItem(filterStorageKey) || 'all'; } catch {}
+
+    function renderMonitorStatus(status) {
+      const heartbeatMs = Date.parse(status?.heartbeatAt) || 0;
+      const ageMs = heartbeatMs ? Date.now() - heartbeatMs : Infinity;
+      const heartbeatText = heartbeatMs
+        ? new Date(heartbeatMs).toLocaleTimeString('zh-CN', { hour12: false })
+        : '';
+      monitorStatus.classList.remove('is-online', 'is-busy', 'is-offline');
+      if (!status || status.running !== true || ageMs > 70_000) {
+        monitorStatus.classList.add('is-offline');
+        monitorStatusText.textContent = heartbeatText
+          ? '后台未运行 · 最后心跳 ' + heartbeatText
+          : '后台未启动 · 请运行 open-results.cmd';
+        return;
+      }
+      const busy = String(status.phase || '').startsWith('正在');
+      monitorStatus.classList.add(busy ? 'is-busy' : 'is-online');
+      monitorStatusText.textContent = (status.phase || '后台运行中')
+        + (status.message ? ' · ' + status.message : '')
+        + ' · ' + heartbeatText;
+    }
+
+    function refreshMonitorStatus() {
+      window.__MERCARI_MONITOR_STATUS__ = undefined;
+      const script = document.createElement('script');
+      script.src = 'monitor-status.js?t=' + Date.now();
+      script.onload = () => {
+        renderMonitorStatus(window.__MERCARI_MONITOR_STATUS__);
+        script.remove();
+      };
+      script.onerror = () => {
+        renderMonitorStatus(null);
+        script.remove();
+      };
+      document.head.append(script);
+    }
 
     function valueFor(row, key) {
       if (key === 'title') return row.dataset.title || '';
@@ -404,6 +496,8 @@ function renderResultsPage(entries) {
       applySort(currentSort.key, currentSort.direction === 'asc' ? 'asc' : 'desc', false);
     }
     applyFilter(currentFilter, false);
+    refreshMonitorStatus();
+    setInterval(refreshMonitorStatus, 10_000);
   })();
 </script>
 </body></html>\n`;
@@ -891,6 +985,7 @@ async function scanOnce() {
 async function shutdown() {
   if (browser) await browser.close().catch(() => {});
   await clearMonitorPid();
+  await stopHeartbeat().catch(() => {});
 }
 
 process.on('SIGINT', async () => {
@@ -906,6 +1001,8 @@ process.on('SIGTERM', async () => {
 });
 
 await claimMonitorPid();
+startHeartbeat();
+await setMonitorPhase('正在启动', '正在准备结果页');
 await syncResultsPage();
 const startupMessage = pruneInactive
   ? `失效商品清理模式启动；本次将检查全部 ${Object.keys(results).length} 条结果。`
@@ -918,6 +1015,7 @@ await log(startupMessage);
 await log('可点击结果页：results.html（双击 open-results.cmd 打开）');
 try {
   browser = await launchBrowser();
+  await setMonitorPhase('正在启动', '浏览器已连接，准备首次检查');
   do {
     try {
       if (pruneInactive) await refreshResultsMetadata(Number.POSITIVE_INFINITY, new Set(), false);
@@ -926,12 +1024,18 @@ try {
       else {
         if (Date.now() >= nextSearchAt) {
           nextSearchAt = Date.now() + config.pollMinutes * 60_000;
+          await setMonitorPhase('正在搜索新品', '正在读取 Mercari 搜索结果');
           await scanOnce();
         }
-        if (Date.now() >= nextLikesRefreshAt) await refreshAllLiveResults();
+        if (Date.now() >= nextLikesRefreshAt) {
+          await setMonitorPhase('正在更新商品资料', '正在刷新价格、いいね和状态');
+          await refreshAllLiveResults();
+        }
+        await setMonitorPhase('运行中', '等待下一轮检查');
       }
     } catch (error) {
       await log(`本轮失败：${error.message}`);
+      await setMonitorPhase('运行中', '上一轮发生错误，稍后自动重试');
     }
     if (once) break;
     const nextWakeAt = Math.min(nextSearchAt, nextLikesRefreshAt);

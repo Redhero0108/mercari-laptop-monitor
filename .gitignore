@@ -5,4 +5,5 @@ results.json
 results.html
 .results.lock
 monitor.pid
+monitor-status.js
 .browser-profile/
