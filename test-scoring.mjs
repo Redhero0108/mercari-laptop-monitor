@@ -56,6 +56,37 @@ assert.equal(assessCandidate({
   price: 30000,
   itemCondition: '未使用に近い',
 }, { minIntelGeneration: 11 }).shouldAlert, false);
+assert.equal(assessCandidate({
+  title: 'HP ProBook Core i5-10210U 32GB SSD 1TB Windows11',
+  detail: '第10世代 1920x1080',
+  price: 30000,
+  itemCondition: '未使用に近い',
+}, { minIntelGeneration: 12, intelOnly: true }).shouldAlert, false);
+
+const twelfthGen = assessCandidate({
+  title: 'ThinkPad X1 Carbon Core i5-1240P 32GB SSD 1TB Windows11',
+  detail: '第12世代 1920x1200',
+  price: 65000,
+  itemCondition: '目立った傷や汚れなし',
+}, { minIntelGeneration: 12, intelOnly: true });
+assert.equal(twelfthGen.cpu.generation, 12);
+assert.equal(twelfthGen.shouldAlert, true);
+
+const ryzenExcluded = assessCandidate({
+  title: 'Ryzen 7 7840U 32GB SSD 1TB Windows11',
+  price: 65000,
+  itemCondition: '目立った傷や汚れなし',
+}, { minIntelGeneration: 12, minRyzenSeries: 5, intelOnly: true });
+assert.equal(ryzenExcluded.cpu.eligible, false);
+assert.equal(ryzenExcluded.shouldAlert, false);
+
+const coreUltra = assessCandidate({
+  title: 'Intel Core Ultra 7 155H 32GB SSD 1TB Windows11',
+  price: 90000,
+  itemCondition: '未使用に近い',
+}, { minIntelGeneration: 12, intelOnly: true });
+assert.equal(coreUltra.cpu.family, 'core-ultra');
+assert.equal(coreUltra.cpu.eligible, true);
 
 const junk = assessCandidate({
   title: 'Core i5-1335U 32GB SSD 1TB Windows11 JUNK品',

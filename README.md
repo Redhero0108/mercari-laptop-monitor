@@ -5,7 +5,7 @@
 - 编程＋云端AI
 - 32GB内存
 - 512GB以上SSD（1TB额外加分）
-- Intel第10代以上（或Ryzen 5000系列以上）
+- Intel第12代以上（同时接受更新的Core Ultra；不接受Ryzen/AMD）
 - 商品状态只接受第1～3级（新品、未使用／未使用に近い／目立った傷や汚れなし）
 - 排除Celeron、JUNK／ジャンク、部品取り、破损、锁机等高风险商品
 
@@ -66,8 +66,9 @@ start-monitor.cmd
 - `pollMinutes`：检查间隔，最低2分钟；建议保持5分钟或更长。
 - `maxPriceYen`：最高提醒价格，默认¥95,000。
 - `minScore`：最低提醒评分，默认58；提高到65会更严格。
-- `minIntelGeneration`：Intel最低世代，当前为10。
-- `minRyzenSeries`：Ryzen最低系列，当前为5（5000系列）。
+- `minIntelGeneration`：Intel最低世代，当前为12。
+- `intelOnly`：当前为`true`，只接受Intel第12代以上及Core Ultra，不接受Ryzen/AMD。
+- `minRyzenSeries`：仅当把`intelOnly`改为`false`时生效。
 - `maxConditionLevel`：允许的最高商品状态级别，当前为3；只接受第1～3级。
 - `excludeKeywords`：在メルカリ搜索阶段直接排除的关键词。
 - `detailCheckLimit`：每轮最多打开的新增商品详情数。

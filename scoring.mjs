@@ -95,6 +95,9 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
   } else if (cpu.family === 'ryzen') {
     cpu.eligible = cpu.series >= Number(config.minRyzenSeries ?? 5);
   }
+  if (config.intelOnly === true && !['intel', 'core-ultra'].includes(cpu.family)) {
+    cpu.eligible = false;
+  }
   const reasons = [];
   let score = 0;
 

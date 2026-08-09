@@ -6,7 +6,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { detectListingAvailability } from './availability.mjs';
 import { parseLikeCount } from './likes.mjs';
-import { assessCandidate, parsePrice } from './scoring.mjs';
+import { assessCandidate, detectCpu, parsePrice } from './scoring.mjs';
 import { extractPublishedAtFromPhotoUrls, formatJstMinute } from './time.mjs';
 
 const require = createRequire(import.meta.url);
@@ -40,7 +40,8 @@ const defaults = {
   pollMinutes: 5,
   maxPriceYen: 95000,
   minScore: 58,
-  minIntelGeneration: 10,
+  minIntelGeneration: 12,
+  intelOnly: true,
   minRyzenSeries: 5,
   maxConditionLevel: 3,
   detailCheckLimit: 15,
@@ -66,6 +67,8 @@ config.metadataRefreshLimit = Math.max(0, Math.min(10, Number(config.metadataRef
 config.likesRefreshMinutes = Math.max(5, Number(config.likesRefreshMinutes) || 10);
 config.likesRefreshConcurrency = Math.max(1, Math.min(5, Number(config.likesRefreshConcurrency) || 3));
 config.maxConditionLevel = Math.max(1, Math.min(6, Number(config.maxConditionLevel) || 3));
+config.minIntelGeneration = Math.max(7, Math.min(15, Number(config.minIntelGeneration) || 12));
+config.intelOnly = config.intelOnly !== false;
 config.queries = Array.isArray(config.queries) && config.queries.length ? config.queries : defaults.queries;
 config.excludeKeywords = Array.isArray(config.excludeKeywords)
   ? config.excludeKeywords.map(String).map((word) => word.trim()).filter(Boolean)
@@ -210,6 +213,23 @@ function escapeHtml(value) {
 
 function isAllowedConditionLevel(level) {
   return Number.isInteger(level) && level >= 1 && level <= config.maxConditionLevel;
+}
+
+function isAllowedCpu(cpu) {
+  if (cpu?.family === 'core-ultra') return true;
+  return cpu?.family === 'intel'
+    && Number.isInteger(cpu.generation)
+    && cpu.generation >= config.minIntelGeneration;
+}
+
+function isAllowedResultCpu(entry) {
+  if (entry.cpuFamily === 'core-ultra') return true;
+  if (entry.cpuFamily === 'intel' && Number.isInteger(entry.cpuGeneration)) {
+    return entry.cpuGeneration >= config.minIntelGeneration;
+  }
+  const reasonText = Array.isArray(entry.reasons) ? entry.reasons.join(' ') : String(entry.reasons ?? '');
+  const cpu = detectCpu(`${entry.title ?? ''} ${reasonText}`);
+  return isAllowedCpu(cpu);
 }
 
 function renderResultsPage(entries) {
@@ -506,6 +526,7 @@ function renderResultsPage(entries) {
 async function writeResultsPageUnlocked() {
   const entries = Object.values(results)
     .filter((entry) => isAllowedConditionLevel(entry.itemConditionLevel))
+    .filter(isAllowedResultCpu)
     .sort((a, b) => Number(b.shouldAlert) - Number(a.shouldAlert)
       || String(b.checkedAt).localeCompare(String(a.checkedAt)))
     .slice(0, 500);
@@ -537,6 +558,9 @@ async function recordResult(item, assessment) {
       grade: assessment.grade,
       shouldAlert: assessment.shouldAlert,
       reasons: assessment.reasons,
+      cpuFamily: assessment.cpu.family,
+      cpuGeneration: assessment.cpu.generation ?? null,
+      cpuLabel: assessment.cpu.label,
       likeCount: Number.isInteger(item.likeCount) ? item.likeCount : previous?.likeCount ?? null,
       likeCheckedAt: new Date().toISOString(),
       itemCondition: item.itemCondition ?? previous?.itemCondition ?? null,
@@ -567,6 +591,9 @@ async function recordLiveResult(item, assessment) {
       grade: assessment.grade,
       shouldAlert: assessment.shouldAlert,
       reasons: assessment.reasons,
+      cpuFamily: assessment.cpu.family,
+      cpuGeneration: assessment.cpu.generation ?? null,
+      cpuLabel: assessment.cpu.label,
       likeCount: hasLikeCount ? item.likeCount : previous.likeCount ?? null,
       likeCheckedAt: hasLikeCount ? now : previous.likeCheckedAt ?? null,
       likeAttemptedAt: now,
@@ -793,6 +820,12 @@ async function refreshResultsMetadata(limit, excludeIds = new Set(), uncheckedMe
         continue;
       }
       const assessment = assessCandidate(detailed, config);
+      if (!isAllowedCpu(assessment.cpu)) {
+        await removeResult(detailed);
+        refreshed += 1;
+        await log(`已剔除不符合CPU条件的商品：${assessment.cpu.label}；${detailed.title}`);
+        continue;
+      }
       if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
         await removeResult(detailed);
         refreshed += 1;
@@ -844,6 +877,11 @@ async function refreshAllLiveResults() {
             continue;
           }
           const assessment = assessCandidate(detailed, config);
+          if (!isAllowedCpu(assessment.cpu)) {
+            if (await removeResult(detailed)) totals.filtered += 1;
+            await log(`已剔除不符合CPU条件的商品：${assessment.cpu.label}；${detailed.title}`);
+            continue;
+          }
           if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
             if (await removeResult(detailed)) totals.filtered += 1;
             await log(`已剔除商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
@@ -866,7 +904,7 @@ async function refreshAllLiveResults() {
   }
 
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  await log(`实时资料刷新完成：检查 ${totals.checked} 件，いいね变化 ${totals.changed} 件，失效剔除 ${totals.removed} 件，状态过滤 ${totals.filtered} 件，未取得 ${totals.failed} 件。`);
+  await log(`实时资料刷新完成：检查 ${totals.checked} 件，いいね变化 ${totals.changed} 件，失效剔除 ${totals.removed} 件，筛选条件剔除 ${totals.filtered} 件，未取得 ${totals.failed} 件。`);
   return totals;
 }
 
@@ -933,6 +971,18 @@ async function scanOnce() {
         continue;
       }
       const assessment = assessCandidate(detailed, config);
+      if (!isAllowedCpu(assessment.cpu)) {
+        await removeResult(detailed);
+        await log(`已跳过不符合CPU条件的商品：${assessment.cpu.label}；${detailed.title}`);
+        if (!diagnose) {
+          state.seen[item.id] = {
+            seenAt: new Date().toISOString(),
+            title: detailed.title,
+            cpu: assessment.cpu.label,
+          };
+        }
+        continue;
+      }
       if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
         await removeResult(detailed);
         await log(`已跳过商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
