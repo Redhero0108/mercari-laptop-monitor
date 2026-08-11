@@ -1,0 +1,13 @@
+{
+  "name": "mercari-watch",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "mercari-watch": "./cli.mjs"
+  },
+  "scripts": {
+    "test": "node test-cli.mjs && node test-availability.mjs && node test-conditions.mjs && node test-likes.mjs && node test-scoring.mjs && node test-time.mjs",
+    "check": "node --check cli.mjs && node --check cli-lib.mjs && node --check monitor.mjs"
+  }
+}

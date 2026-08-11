@@ -14,6 +14,71 @@
 商品页面明确显示已删除、公开停止，或返回HTTP 404／410时，会从结果记录中自动剔除；普通网络失败不会误删商品。商品状态只保留第1、2、3级，第4级及以后（以及无法确认状态的商品）不会进入结果列表。
 商品页面明确显示“売り切れました”时也会自动剔除。正常监测会分批复查旧记录，也可使用 `--prune-inactive` 一次清查全部结果。
 
+## 全局命令 `mercari-watch`
+
+在本目录打开PowerShell，执行一次：
+
+```powershell
+npm link
+```
+
+之后可以在任意目录调用：
+
+```powershell
+# 环境诊断（包含Mercari连通性检查）
+mercari-watch doctor
+
+# 列出监控任务及其稳定任务ID
+mercari-watch tasks list
+
+# 添加关键词；先预览，不修改config.json
+mercari-watch keywords add "32GB 1TB 第12世代 ノートPC" --dry-run
+
+# 确认后实际添加
+mercari-watch keywords add "32GB 1TB 第12世代 ノートPC"
+
+# 修改或删除一条；可使用tasks list显示的任务ID，也可使用完整旧关键词
+mercari-watch keywords update query-xxxxxxxxxxxx "32GB 1TB 第13世代 ノートPC" --dry-run
+mercari-watch keywords remove query-xxxxxxxxxxxx --dry-run
+
+# 清空全部关键词必须明确确认
+mercari-watch keywords clear --dry-run
+mercari-watch keywords clear --yes
+
+# 原子替换全部关键词：先预览，确认无误后把--dry-run改为--yes
+mercari-watch keywords replace-all `
+  --keyword "32GB 1TB 第12世代 ノートPC" `
+  --keyword "ThinkPad X1 Carbon 32GB 512GB" `
+  --dry-run
+
+# 启动一次检查；默认不弹通知
+mercari-watch check
+
+# 查看最近20件，以及按商品ID读取一件
+mercari-watch results recent --limit 20
+mercari-watch results get m12345678901
+```
+
+自动化脚本请加全局参数 `--json`。stdout只输出一个稳定JSON对象；成功结构为
+`{"ok":true,"command":"...","data":{},"meta":{"schemaVersion":"1","cliVersion":"1.1.0"}}`，失败结构为
+`{"ok":false,"command":"...","error":{"code":"...","message":"..."},"meta":{...}}`。错误时进程返回非零退出代码。
+
+```powershell
+mercari-watch --json tasks list
+mercari-watch --json results recent --limit 10
+mercari-watch --json doctor --offline
+```
+
+高级排查可把原监控参数放在 `--` 后面，例如：
+
+```powershell
+mercari-watch monitor run -- --diagnose --show-browser
+```
+
+CLI不需要登录或API密钥，只读取公开商品并管理本机配置。它没有购买或联系卖家的命令；`check`默认也不会发送通知，只有明确加 `--notify` 才会沿用通知功能。全局命令通过npm链接到当前源码目录，如果以后移动本文件夹，需要在新位置重新执行 `npm link`。
+
+关键词的 `add`、`update`、`remove`、`clear`、`replace-all` 都支持 `--dry-run`。单条修改和删除按稳定任务ID或完整关键词定位；清空与批量替换会影响全部搜索任务，真正执行时必须使用 `--yes`。批量替换只写入一次配置文件，不会出现“先清空成功、后添加失败”的中间状态。修改搜索关键词不会自动删除旧的商品结果或去重历史。
+
 ## 启动
 
 双击：
