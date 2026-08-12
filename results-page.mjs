@@ -1,3 +1,5 @@
+import { formatJstMinute } from './time.mjs';
+
 export function compactCondition(entry) {
   const level = Number.isInteger(entry?.itemConditionLevel) ? entry.itemConditionLevel : null;
   const labels = {
@@ -16,7 +18,7 @@ export function compactCondition(entry) {
   };
 }
 
-export function searchText(entry, priceText) {
+export function searchText(entry, priceText, blockerText = '') {
   const reasons = Array.isArray(entry?.reasons) ? entry.reasons.join(' ') : String(entry?.reasons ?? '');
   return [
     entry?.title,
@@ -24,6 +26,7 @@ export function searchText(entry, priceText) {
     entry?.itemCondition,
     entry?.grade,
     priceText,
+    blockerText,
   ].filter(Boolean).join(' ');
 }
 
@@ -102,7 +105,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     const gradeRank = { S: 4, A: 3, B: 2, C: 1 }[entry.grade] ?? 0;
     const isRecent = isRecentEntry(entry);
     const newBadge = isRecent ? '<span class="new-badge">NEW</span>' : '';
-    const searchable = searchText(entry, price);
+    const searchable = searchText(entry, price, blocker);
     return `<tr class="result-row" data-grade="${gradeRank}" data-price="${hasPrice ? entry.price : ''}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-condition="${Number.isInteger(entry.itemConditionLevel) ? entry.itemConditionLevel : ''}" data-title="${escapeHtml(entry.title)}" data-match="${shouldAlert ? 1 : 0}" data-new="${isRecent ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-time="${Date.parse(entry.checkedAt) || 0}" data-search="${escapeHtml(searchable)}">
       <td class="grade-cell"><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">级</span></td>
       <td class="numeric-cell">${escapeHtml(price)}</td>
@@ -400,8 +403,6 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
 </script>
 </body></html>\n`;
 }
-import { formatJstMinute } from './time.mjs';
-
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')

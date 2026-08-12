@@ -39,8 +39,8 @@ const searchable = searchText({
   ...baseEntry,
   grade: 'S',
   reasons: ['32GB内存', 'Intel 第13代', '商务本系列'],
-}, '¥90,000');
-for (const expected of ['HP EliteBook', '32GB内存', 'Intel 第13代', '目立った傷や汚れなし', 'S', '¥90,000']) {
+}, '¥90,000', '超预算 ¥5,000');
+for (const expected of ['HP EliteBook', '32GB内存', 'Intel 第13代', '目立った傷や汚れなし', 'S', '¥90,000', '超预算 ¥5,000']) {
   assert.ok(searchable.includes(expected), `搜索文本应包含：${expected}`);
 }
 
@@ -152,7 +152,7 @@ assert.match(rendered, /class="condition-cell" title="3｜目立った傷や汚�
 assert.match(rendered, /class="title"[^>]*>HP EliteBook 830 G10 32GB 512GB<span class="external-mark"/);
 assert.match(rendered, /class="decision decision-blocked">超预算 ¥5,000/);
 assert.match(rendered, /class="decision decision-match">符合提醒/);
-assert.match(rendered, /data-search="[^"]*HP EliteBook[^"]*Intel 第13代/);
+assert.match(rendered, /data-search="[^"]*HP EliteBook[^"]*Intel 第13代[^"]*超预算 ¥5,000/);
 
 const inlineScript = rendered.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1];
 assert.ok(inlineScript, '结果页应包含交互脚本');
@@ -161,5 +161,19 @@ assert.doesNotThrow(() => new Function(inlineScript), '结果页交互脚本必�
 const emptyRendered = renderResultsPage([], { likesRefreshMinutes: 10 }, { nowMs: Date.now() });
 assert.match(emptyRendered, /colspan="7"/);
 assert.match(emptyRendered, /没有符合当前筛选和搜索的商品/);
+
+const escapedRendered = renderResultsPage([
+  {
+    ...baseEntry,
+    id: 'm3',
+    title: '<script>alert("xss")</script>',
+    url: 'https://jp.mercari.com/item/m3?ref="unsafe"',
+    publishedAt: '2026-08-12T02:00:00.000Z',
+    checkedAt: '2026-08-12T03:00:00.000Z',
+  },
+], { likesRefreshMinutes: 10 }, { nowMs: Date.now() });
+assert.doesNotMatch(escapedRendered, /<script>alert\("xss"\)<\/script>/);
+assert.match(escapedRendered, /&lt;script&gt;alert\(&quot;xss&quot;\)&lt;\/script&gt;/);
+assert.match(escapedRendered, /ref=&quot;unsafe&quot;/);
 
 console.log('results page tests: OK');
