@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import {
   compactCondition,
+  matchesResultRow,
   primaryBlocker,
+  renderResultsPage,
   searchText,
 } from './results-page.mjs';
 
@@ -80,4 +82,84 @@ assert.equal(
   '符合提醒',
 );
 
-console.log('results page helper tests: OK');
+assert.equal(
+  matchesResultRow({ match: '1', grade: '3', new: '0', search: 'ＨＰ EliteBook Intel 第13代' }, 'match', 'hp 13代'),
+  true,
+  '搜索应进行NFKC和大小写归一化，并与快捷筛选同时生效',
+);
+assert.equal(
+  matchesResultRow({ match: '0', grade: '4', new: '1', search: 'HP EliteBook Intel 第13代' }, 'match', 'HP'),
+  false,
+  '搜索命中不能绕过当前快捷筛选',
+);
+assert.equal(
+  matchesResultRow({ match: '1', grade: '4', new: '1', search: 'HP EliteBook Intel 第13代' }, 'new', 'HP ThinkPad'),
+  false,
+  '多个搜索词必须全部命中',
+);
+
+const renderEntries = [
+  {
+    ...baseEntry,
+    id: 'm1',
+    url: 'https://jp.mercari.com/item/m1',
+    price: 100000,
+    score: 55,
+    grade: 'B',
+    shouldAlert: false,
+    conditionEligible: true,
+    likeCount: 4,
+    likeCheckedAt: '2026-08-12T03:00:00.000Z',
+    publishedAt: '2026-08-12T01:30:00.000Z',
+    checkedAt: '2026-08-12T03:00:00.000Z',
+  },
+  {
+    ...baseEntry,
+    id: 'm2',
+    title: 'ThinkPad X1 Carbon 32GB 1TB',
+    url: 'https://jp.mercari.com/item/m2',
+    price: 76000,
+    score: 80,
+    grade: 'S',
+    shouldAlert: true,
+    conditionEligible: true,
+    reasons: ['商品状态第2级', '32GB内存', '1TB存储', 'Intel 第13代'],
+    itemConditionLevel: 2,
+    itemCondition: '未使用に近い',
+    likeCount: 8,
+    likeCheckedAt: '2026-08-12T03:00:00.000Z',
+    publishedAt: '2026-08-12T02:00:00.000Z',
+    checkedAt: '2026-08-12T03:00:00.000Z',
+  },
+];
+const rendered = renderResultsPage(renderEntries, {
+  maxPriceYen: 95000,
+  minScore: 58,
+  likesRefreshMinutes: 10,
+}, { nowMs: Date.parse('2026-08-12T04:00:00.000Z') });
+
+assert.match(rendered, /type="search"/);
+assert.match(rendered, /aria-label="搜索商品"/);
+assert.match(rendered, /id="result-count"/);
+assert.match(rendered, /mercari-laptop-monitor-search/);
+const sortKeys = [...rendered.matchAll(/data-sort="([^"]+)"/g)].map((match) => match[1]);
+assert.deepEqual(sortKeys, ['grade', 'price', 'likes', 'condition', 'title', 'published', 'time']);
+assert.doesNotMatch(rendered, /<th[^>]*>\s*判断/);
+assert.doesNotMatch(rendered, /<th[^>]*>\s*链接/);
+assert.doesNotMatch(rendered, /class="status-cell"/);
+assert.doesNotMatch(rendered, /class="action-cell"/);
+assert.match(rendered, /class="condition-cell" title="3｜目立った傷や汚れなし">3｜无明显伤污/);
+assert.match(rendered, /class="title"[^>]*>HP EliteBook 830 G10 32GB 512GB<span class="external-mark"/);
+assert.match(rendered, /class="decision decision-blocked">超预算 ¥5,000/);
+assert.match(rendered, /class="decision decision-match">符合提醒/);
+assert.match(rendered, /data-search="[^"]*HP EliteBook[^"]*Intel 第13代/);
+
+const inlineScript = rendered.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1];
+assert.ok(inlineScript, '结果页应包含交互脚本');
+assert.doesNotThrow(() => new Function(inlineScript), '结果页交互脚本必须是有效JavaScript');
+
+const emptyRendered = renderResultsPage([], { likesRefreshMinutes: 10 }, { nowMs: Date.now() });
+assert.match(emptyRendered, /colspan="7"/);
+assert.match(emptyRendered, /没有符合当前筛选和搜索的商品/);
+
+console.log('results page tests: OK');
