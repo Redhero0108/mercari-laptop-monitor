@@ -1,9 +1,9 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $appDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $pidFile = Join-Path $appDir 'monitor.pid'
 
 if (-not (Test-Path -LiteralPath $pidFile)) {
-    Write-Host 'Background monitor is not running.'
+    Write-Host '后台监测器没有运行。'
     exit 0
 }
 
@@ -14,4 +14,4 @@ if ($process) {
     [void]$process.WaitForExit(5000)
 }
 Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
-Write-Host 'Background monitor stopped.'
+Write-Host '后台监测器已停止。'
