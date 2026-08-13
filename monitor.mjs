@@ -5,6 +5,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { detectListingAvailability } from './availability.mjs';
+import {
+  DEFAULT_ALLOWED_SERIES,
+  hardFilterFailure,
+  resultMatchesHardFilters,
+} from './laptop-filters.mjs';
 import { parseLikeCount } from './likes.mjs';
 import { renderResultsPage } from './results-page.mjs';
 import { assessCandidate, detectCpu, parsePrice } from './scoring.mjs';
@@ -51,13 +56,14 @@ const defaults = {
   likesRefreshConcurrency: 3,
   headless: true,
   notify: true,
+  allowedSeries: [...DEFAULT_ALLOWED_SERIES],
   excludeKeywords: ['ジャンク', 'JUNK', '部品取り'],
   queries: [
-    '32GB 1TB ノートPC',
-    '32G 1TB ノートパソコン',
-    'メモリ32GB SSD1TB ノート',
-    '32GB 512GB ノートPC',
-    'メモリ32GB SSD512GB ノート',
+    'X1 Carbon 32GB',
+    'HP ProBook 32GB',
+    'Dell Precision 32GB',
+    'レッツノート 32GB',
+    'dynabook G83 32GB',
   ],
 };
 
@@ -70,6 +76,9 @@ config.likesRefreshConcurrency = Math.max(1, Math.min(5, Number(config.likesRefr
 config.maxConditionLevel = Math.max(1, Math.min(6, Number(config.maxConditionLevel) || 3));
 config.minIntelGeneration = Math.max(7, Math.min(15, Number(config.minIntelGeneration) || 12));
 config.intelOnly = config.intelOnly !== false;
+config.allowedSeries = Array.isArray(config.allowedSeries)
+  ? config.allowedSeries.map(String).map((id) => id.trim()).filter(Boolean)
+  : defaults.allowedSeries;
 config.queries = Array.isArray(config.queries) && config.queries.length ? config.queries : defaults.queries;
 config.excludeKeywords = Array.isArray(config.excludeKeywords)
   ? config.excludeKeywords.map(String).map((word) => word.trim()).filter(Boolean)
@@ -224,10 +233,23 @@ function isAllowedResultCpu(entry) {
   return isAllowedCpu(cpu);
 }
 
+const HARD_FILTER_MESSAGES = {
+  series: '不在指定五个商务系列中',
+  memory: '内存不是32GB或无法确认',
+  storage: '存储不足512GB或无法确认',
+  ssd: '无法确认是SSD',
+};
+
+function hardFilterMessage(assessment) {
+  const failure = hardFilterFailure(assessment);
+  return failure ? HARD_FILTER_MESSAGES[failure] : null;
+}
+
 async function writeResultsPageUnlocked() {
   const entries = Object.values(results)
     .filter((entry) => isAllowedConditionLevel(entry.itemConditionLevel))
     .filter(isAllowedResultCpu)
+    .filter((entry) => resultMatchesHardFilters(entry, config.allowedSeries))
     .sort((a, b) => Number(b.shouldAlert) - Number(a.shouldAlert)
       || String(b.checkedAt).localeCompare(String(a.checkedAt)))
     .slice(0, 500);
@@ -262,6 +284,12 @@ async function recordResult(item, assessment) {
       cpuFamily: assessment.cpu.family,
       cpuGeneration: assessment.cpu.generation ?? null,
       cpuLabel: assessment.cpu.label,
+      has32GB: assessment.has32GB,
+      has512GB: assessment.has512GB,
+      hasSSD: assessment.hasSSD,
+      seriesId: assessment.series?.id ?? null,
+      seriesLabel: assessment.series?.label ?? null,
+      seriesEligible: assessment.seriesEligible,
       likeCount: Number.isInteger(item.likeCount) ? item.likeCount : previous?.likeCount ?? null,
       likeCheckedAt: new Date().toISOString(),
       itemCondition: item.itemCondition ?? previous?.itemCondition ?? null,
@@ -295,6 +323,12 @@ async function recordLiveResult(item, assessment) {
       cpuFamily: assessment.cpu.family,
       cpuGeneration: assessment.cpu.generation ?? null,
       cpuLabel: assessment.cpu.label,
+      has32GB: assessment.has32GB,
+      has512GB: assessment.has512GB,
+      hasSSD: assessment.hasSSD,
+      seriesId: assessment.series?.id ?? null,
+      seriesLabel: assessment.series?.label ?? null,
+      seriesEligible: assessment.seriesEligible,
       likeCount: hasLikeCount ? item.likeCount : previous.likeCount ?? null,
       likeCheckedAt: hasLikeCount ? now : previous.likeCheckedAt ?? null,
       likeAttemptedAt: now,
@@ -533,6 +567,13 @@ async function refreshResultsMetadata(limit, excludeIds = new Set(), uncheckedMe
         await log(`已剔除商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
         continue;
       }
+      const rejection = hardFilterMessage(assessment);
+      if (rejection) {
+        await removeResult(detailed);
+        refreshed += 1;
+        await log(`已剔除不符合目标规格的商品：${rejection}；${detailed.title}`);
+        continue;
+      }
       await recordResult(detailed, assessment);
       refreshed += 1;
       const likeText = Number.isInteger(detailed.likeCount) ? detailed.likeCount : '无法取得';
@@ -586,6 +627,12 @@ async function refreshAllLiveResults() {
           if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
             if (await removeResult(detailed)) totals.filtered += 1;
             await log(`已剔除商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
+            continue;
+          }
+          const rejection = hardFilterMessage(assessment);
+          if (rejection) {
+            if (await removeResult(detailed)) totals.filtered += 1;
+            await log(`已剔除不符合目标规格的商品：${rejection}；${detailed.title}`);
             continue;
           }
           const change = await recordLiveResult(detailed, assessment);
@@ -692,6 +739,19 @@ async function scanOnce() {
             seenAt: new Date().toISOString(),
             title: detailed.title,
             itemConditionLevel: assessment.itemConditionLevel,
+          };
+        }
+        continue;
+      }
+      const rejection = hardFilterMessage(assessment);
+      if (rejection) {
+        await removeResult(detailed);
+        await log(`已跳过不符合目标规格的商品：${rejection}；${detailed.title}`);
+        if (!diagnose) {
+          state.seen[item.id] = {
+            seenAt: new Date().toISOString(),
+            title: detailed.title,
+            filtered: rejection,
           };
         }
         continue;

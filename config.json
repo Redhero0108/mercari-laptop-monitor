@@ -12,16 +12,23 @@
   "likesRefreshConcurrency": 3,
   "headless": true,
   "notify": true,
+  "allowedSeries": [
+    "thinkpad-x1-carbon",
+    "hp-probook",
+    "dell-precision",
+    "panasonic-lets-note",
+    "dynabook-g83"
+  ],
   "excludeKeywords": [
     "ジャンク",
     "JUNK",
     "部品取り"
   ],
   "queries": [
-    "32GB 1TB ノートPC",
-    "32G 1TB ノートパソコン",
-    "メモリ32GB SSD1TB ノート",
-    "32GB 512GB ノートPC",
-    "メモリ32GB SSD512GB ノート"
+    "X1 Carbon 32GB",
+    "HP ProBook 32GB",
+    "Dell Precision 32GB",
+    "レッツノート 32GB",
+    "dynabook G83 32GB"
   ]
 }

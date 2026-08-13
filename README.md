@@ -6,6 +6,7 @@
 - 32GB内存
 - 512GB以上SSD（1TB额外加分）
 - Intel第12代以上（同时接受更新的Core Ultra；不接受Ryzen/AMD）
+- 系列只接受ThinkPad X1 Carbon、HP ProBook、Dell Precision、Panasonic Let's note、Dynabook G83
 - 商品状态只接受第1～3级（新品、未使用／未使用に近い／目立った傷や汚れなし）
 - 排除Celeron、JUNK／ジャンク、部品取り、破损、锁机等高风险商品
 
@@ -47,8 +48,11 @@ mercari-watch keywords clear --yes
 
 # 原子替换全部关键词：先预览，确认无误后把--dry-run改为--yes
 mercari-watch keywords replace-all `
-  --keyword "32GB 1TB 第12世代 ノートPC" `
-  --keyword "ThinkPad X1 Carbon 32GB 512GB" `
+  --keyword "X1 Carbon 32GB" `
+  --keyword "HP ProBook 32GB" `
+  --keyword "Dell Precision 32GB" `
+  --keyword "レッツノート 32GB" `
+  --keyword "dynabook G83 32GB" `
   --dry-run
 
 # 启动一次检查；默认不弹通知
@@ -137,6 +141,7 @@ start-monitor.cmd
 - `intelOnly`：当前为`true`，只接受Intel第12代以上及Core Ultra，不接受Ryzen/AMD。
 - `minRyzenSeries`：仅当把`intelOnly`改为`false`时生效。
 - `maxConditionLevel`：允许的最高商品状态级别，当前为3；只接受第1～3级。
+- `allowedSeries`：最终结果允许的商务本系列ID；当前固定为上述五个系列。
 - `excludeKeywords`：在メルカリ搜索阶段直接排除的关键词。
 - `detailCheckLimit`：每轮最多打开的新增商品详情数。
 - `metadataRefreshLimit`：正常监测时每轮补查的旧记录数，默认5、最高10。

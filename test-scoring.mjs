@@ -3,6 +3,8 @@ import { assessCandidate, detectCpu, parsePrice } from './scoring.mjs';
 
 assert.equal(parsePrice('¥\n85,800\nHP'), 85800);
 assert.equal(detectCpu('Core i5-1335U 第13世代').generation, 13);
+assert.equal(detectCpu('i7-1360P').generation, 13);
+assert.equal(detectCpu('Ultra 7 255H').family, 'core-ultra');
 assert.equal(detectCpu('Core i7-1165G7').generation, 11);
 assert.equal(detectCpu('Core i5-10210U').eligible, true);
 assert.equal(detectCpu('Ryzen 7 5700U').series, 5);
@@ -129,5 +131,39 @@ const unknownCondition = assessCandidate({
 });
 assert.equal(unknownCondition.conditionEligible, false);
 assert.equal(unknownCondition.shouldAlert, false);
+
+const allowedSeries = [
+  'thinkpad-x1-carbon',
+  'hp-probook',
+  'dell-precision',
+  'panasonic-lets-note',
+  'dynabook-g83',
+];
+const targetSeriesCases = [
+  ['ThinkPad X1 Carbon Gen 10 Core i5-1240P 32GB NVMe 512GB', 'thinkpad-x1-carbon'],
+  ['HP ProBook 450 G9 Core i5-1235U 32GB SSD 512GB', 'hp-probook'],
+  ['Dell Precision 5570 Core i7-12700H 32GB NVMe 1TB', 'dell-precision'],
+  ['Panasonic レッツノート CF-SV2 Core i5-1245U 32GB SSD 512GB', 'panasonic-lets-note'],
+  ['dynabook G83/HU Core i5-1240P 32GB SSD 512GB', 'dynabook-g83'],
+];
+for (const [title, expectedSeriesId] of targetSeriesCases) {
+  const assessment = assessCandidate({
+    title,
+    price: 60000,
+    itemCondition: '目立った傷や汚れなし',
+  }, { minIntelGeneration: 12, intelOnly: true, allowedSeries });
+  assert.equal(assessment.series?.id, expectedSeriesId, title);
+  assert.equal(assessment.seriesEligible, true, title);
+  assert.equal(assessment.shouldAlert, true, title);
+}
+
+const restrictedEliteBook = assessCandidate({
+  title: 'HP EliteBook 630 G10 Core i5-1335U 32GB SSD 1TB',
+  price: 60000,
+  itemCondition: '目立った傷や汚れなし',
+}, { minIntelGeneration: 12, intelOnly: true, allowedSeries });
+assert.equal(restrictedEliteBook.series, null);
+assert.equal(restrictedEliteBook.seriesEligible, false);
+assert.equal(restrictedEliteBook.shouldAlert, false);
 
 console.log('scoring tests: OK');

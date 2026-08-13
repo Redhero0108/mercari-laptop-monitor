@@ -1,4 +1,5 @@
 import { conditionLevel } from './conditions.mjs';
+import { detectLaptopSeries, isAllowedLaptopSeries } from './laptop-filters.mjs';
 
 const BUSINESS_MODELS = /elitebook|probook|latitude|thinkpad|dynabook\s*g\d|lifebook\s*u|let'?s\s*note|vaio\s*pro/i;
 const SEVERE_DEFECTS = /ジャンク|junk|部品取り|起動不可|電源(?:が)?入らない|ssdなし|ストレージなし|画面割れ|液晶割れ|bios(?:ロック|パスワード)|パスワード不明/i;
@@ -31,7 +32,7 @@ function detectIntelGeneration(text) {
   const explicit = text.match(/第?\s*(1[0-5]|[7-9])\s*世代/i);
   if (explicit) return Number(explicit[1]);
 
-  const model = text.match(/core\s*i[3579]\s*[- ]?\s*(\d{4,5})[a-z]*/i);
+  const model = text.match(/(?:core\s*)?i[3579]\s*[- ]?\s*(\d{4,5})[a-z]*/i);
   if (!model) return null;
   const digits = model[1];
   const firstTwo = Number(digits.slice(0, 2));
@@ -45,7 +46,7 @@ function detectRyzenSeries(text) {
 
 export function detectCpu(text) {
   const normalized = compact(text);
-  if (/core\s*ultra/i.test(normalized)) {
+  if (/\b(?:core\s*)?ultra\s*[3579]\b/i.test(normalized)) {
     return { family: 'core-ultra', label: 'Intel Core Ultra', eligible: true, fairPrice: 120000, score: 30 };
   }
   if (/celeron|pentium|atom|n5095|n5105|n100\b|n95\b/i.test(normalized)) {
@@ -89,6 +90,9 @@ export function detectCpu(text) {
 export function assessCandidate({ title, detail = '', price = null, itemCondition = null }, config = {}) {
   const text = compact(`${title} ${detail}`);
   const resolvedPrice = price ?? parsePrice(text);
+  const series = detectLaptopSeries(text);
+  const seriesRestricted = Array.isArray(config.allowedSeries);
+  const seriesEligible = !seriesRestricted || isAllowedLaptopSeries(series, config.allowedSeries);
   const cpu = { ...detectCpu(text) };
   if (cpu.family === 'intel') {
     cpu.eligible = cpu.generation >= Number(config.minIntelGeneration ?? 10);
@@ -161,6 +165,9 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
     score += 6;
     reasons.push('商务本系列');
   }
+  if (seriesRestricted) {
+    reasons.push(seriesEligible ? `指定系列：${series.label}` : '非指定商务系列');
+  }
   if (/full\s*hd|fhd|1920\s*[x×*]\s*1080|1920\s*[x×*]\s*1200/i.test(text)) score += 3;
   if (/バッテリー.{0,12}(?:未消耗|良好|9\d\s*%|100\s*%)/i.test(text)) {
     score += 5;
@@ -196,6 +203,7 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
     has32GB
       && has512GB
       && hasSSD
+      && seriesEligible
       && cpu.eligible
       && conditionEligible
       && !severeDefect
@@ -216,6 +224,8 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
     has512GB,
     has1TB,
     hasSSD,
+    series,
+    seriesEligible,
     itemConditionLevel,
     conditionEligible,
     reasons,
