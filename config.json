@@ -1,6 +1,7 @@
 {
   "pollMinutes": 5,
   "maxPriceYen": 95000,
+  "maxResultPriceYen": 99999,
   "minScore": 58,
   "minIntelGeneration": 12,
   "intelOnly": true,

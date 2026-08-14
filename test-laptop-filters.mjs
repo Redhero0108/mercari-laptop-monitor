@@ -30,6 +30,9 @@ assert.equal(filters.hardFilterFailure?.({ ...eligibleAssessment, seriesEligible
 assert.equal(filters.hardFilterFailure?.({ ...eligibleAssessment, has32GB: false }), 'memory');
 assert.equal(filters.hardFilterFailure?.({ ...eligibleAssessment, has512GB: false }), 'storage');
 assert.equal(filters.hardFilterFailure?.({ ...eligibleAssessment, hasSSD: false }), 'ssd');
+assert.equal(filters.hardFilterFailure({ ...eligibleAssessment, price: 99999 }, 99999), null);
+assert.equal(filters.hardFilterFailure({ ...eligibleAssessment, price: 100000 }, 99999), 'price');
+assert.equal(filters.hardFilterFailure({ ...eligibleAssessment, price: null }, 99999), null);
 
 assert.equal(filters.resultMatchesHardFilters?.({
   title: 'HP ProBook 450 G9',
@@ -52,5 +55,29 @@ assert.equal(filters.resultMatchesHardFilters?.({
   title: 'ThinkPad X1 Carbon Gen 10',
   reasons: ['32GB内存', '1TB存储', 'Intel 第12代', '商务本系列'],
 }, allowedSeries), true);
+assert.equal(filters.resultMatchesHardFilters({
+  title: 'HP ProBook 450 G9',
+  seriesId: 'hp-probook',
+  has32GB: true,
+  has512GB: true,
+  hasSSD: true,
+  price: 99999,
+}, allowedSeries, 99999), true);
+assert.equal(filters.resultMatchesHardFilters({
+  title: 'HP ProBook 450 G9',
+  seriesId: 'hp-probook',
+  has32GB: true,
+  has512GB: true,
+  hasSSD: true,
+  price: 100000,
+}, allowedSeries, 99999), false);
+assert.equal(filters.resultMatchesHardFilters({
+  title: 'HP ProBook 450 G9',
+  seriesId: 'hp-probook',
+  has32GB: true,
+  has512GB: true,
+  hasSSD: true,
+  price: null,
+}, allowedSeries, 99999), true);
 
 console.log('laptop filter tests: OK');

@@ -46,11 +46,12 @@ export function isAllowedLaptopSeries(text, allowedSeries = DEFAULT_ALLOWED_SERI
   return Boolean(series && Array.isArray(allowedSeries) && allowedSeries.includes(series.id));
 }
 
-export function hardFilterFailure(assessment) {
+export function hardFilterFailure(assessment, maxResultPriceYen = Number.POSITIVE_INFINITY) {
   if (assessment?.seriesEligible !== true) return 'series';
   if (assessment?.has32GB !== true) return 'memory';
   if (assessment?.has512GB !== true) return 'storage';
   if (assessment?.hasSSD !== true) return 'ssd';
+  if (Number.isFinite(assessment?.price) && assessment.price > maxResultPriceYen) return 'price';
   return null;
 }
 
@@ -58,7 +59,11 @@ function persistedBoolean(entry, property, fallback) {
   return typeof entry?.[property] === 'boolean' ? entry[property] : fallback;
 }
 
-export function resultMatchesHardFilters(entry, allowedSeries = DEFAULT_ALLOWED_SERIES) {
+export function resultMatchesHardFilters(
+  entry,
+  allowedSeries = DEFAULT_ALLOWED_SERIES,
+  maxResultPriceYen = Number.POSITIVE_INFINITY,
+) {
   const reasons = Array.isArray(entry?.reasons) ? entry.reasons.join(' ') : String(entry?.reasons ?? '');
   const text = compact(`${entry?.title ?? ''} ${reasons}`);
   const series = entry?.seriesId
@@ -72,5 +77,6 @@ export function resultMatchesHardFilters(entry, allowedSeries = DEFAULT_ALLOWED_
     /(?:\b512\s*(?:gb|g)\b|\b1\s*tb\b|512GB存储|1TB存储)/i.test(text),
   );
   const hasSSD = persistedBoolean(entry, 'hasSSD', !/未确认SSD/.test(reasons));
-  return seriesEligible && has32GB && has512GB && hasSSD;
+  const priceEligible = !Number.isFinite(entry?.price) || entry.price <= maxResultPriceYen;
+  return seriesEligible && has32GB && has512GB && hasSSD && priceEligible;
 }

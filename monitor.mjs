@@ -45,6 +45,7 @@ const persistentMonitor = !once;
 const defaults = {
   pollMinutes: 5,
   maxPriceYen: 95000,
+  maxResultPriceYen: 99999,
   minScore: 58,
   minIntelGeneration: 12,
   intelOnly: true,
@@ -76,6 +77,10 @@ config.likesRefreshConcurrency = Math.max(1, Math.min(5, Number(config.likesRefr
 config.maxConditionLevel = Math.max(1, Math.min(6, Number(config.maxConditionLevel) || 3));
 config.minIntelGeneration = Math.max(7, Math.min(15, Number(config.minIntelGeneration) || 12));
 config.intelOnly = config.intelOnly !== false;
+const parsedMaxResultPriceYen = Number(config.maxResultPriceYen);
+config.maxResultPriceYen = Number.isFinite(parsedMaxResultPriceYen) && parsedMaxResultPriceYen >= 1
+  ? Math.floor(parsedMaxResultPriceYen)
+  : defaults.maxResultPriceYen;
 config.allowedSeries = Array.isArray(config.allowedSeries)
   ? config.allowedSeries.map(String).map((id) => id.trim()).filter(Boolean)
   : defaults.allowedSeries;
@@ -238,10 +243,11 @@ const HARD_FILTER_MESSAGES = {
   memory: '内存不是32GB或无法确认',
   storage: '存储不足512GB或无法确认',
   ssd: '无法确认是SSD',
+  price: '价格达到或超过10万日元',
 };
 
 function hardFilterMessage(assessment) {
-  const failure = hardFilterFailure(assessment);
+  const failure = hardFilterFailure(assessment, config.maxResultPriceYen);
   return failure ? HARD_FILTER_MESSAGES[failure] : null;
 }
 
@@ -249,7 +255,11 @@ async function writeResultsPageUnlocked() {
   const entries = Object.values(results)
     .filter((entry) => isAllowedConditionLevel(entry.itemConditionLevel))
     .filter(isAllowedResultCpu)
-    .filter((entry) => resultMatchesHardFilters(entry, config.allowedSeries))
+    .filter((entry) => resultMatchesHardFilters(
+      entry,
+      config.allowedSeries,
+      config.maxResultPriceYen,
+    ))
     .sort((a, b) => Number(b.shouldAlert) - Number(a.shouldAlert)
       || String(b.checkedAt).localeCompare(String(a.checkedAt)))
     .slice(0, 500);

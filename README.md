@@ -7,6 +7,7 @@
 - 512GB以上SSD（1TB额外加分）
 - Intel第12代以上（同时接受更新的Core Ultra；不接受Ryzen/AMD）
 - 系列只接受ThinkPad X1 Carbon、HP ProBook、Dell Precision、Panasonic Let's note、Dynabook G83
+- 价格达到¥100,000的商品不进入结果列表（最高保留¥99,999）
 - 商品状态只接受第1～3级（新品、未使用／未使用に近い／目立った傷や汚れなし）
 - 排除Celeron、JUNK／ジャンク、部品取り、破损、锁机等高风险商品
 
@@ -136,6 +137,7 @@ start-monitor.cmd
 
 - `pollMinutes`：检查间隔，最低2分钟；建议保持5分钟或更长。
 - `maxPriceYen`：最高提醒价格，默认¥95,000。
+- `maxResultPriceYen`：结果列表最高价格，当前¥99,999；¥100,000及以上商品会自动剔除。
 - `minScore`：最低提醒评分，默认58；提高到65会更严格。
 - `minIntelGeneration`：Intel最低世代，当前为12。
 - `intelOnly`：当前为`true`，只接受Intel第12代以上及Core Ultra，不接受Ryzen/AMD。
