@@ -240,6 +240,7 @@ const HARD_FILTER_MESSAGES = {
   memory: '内存不是32GB或无法确认',
   storage: '存储不足512GB或无法确认',
   ssd: '无法确认是SSD',
+  risk: '存在外观、屏幕、严重故障或锁机风险',
   price: '价格达到或超过10万日元',
 };
 

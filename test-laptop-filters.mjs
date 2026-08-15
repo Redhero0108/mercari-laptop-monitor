@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import * as filters from './laptop-filters.mjs';
+import { assessCandidate } from './scoring.mjs';
 
 const allowedSeries = [...filters.DEFAULT_ALLOWED_SERIES];
 const seriesCases = [
@@ -52,6 +53,49 @@ assert.equal(filters.hardFilterFailure({ ...eligibleAssessment, price: 99999 }, 
 assert.equal(filters.hardFilterFailure({ ...eligibleAssessment, price: 100000 }, 99999), 'price');
 assert.equal(filters.hardFilterFailure({ ...eligibleAssessment, price: null }, 99999), null);
 
+assert.equal(
+  filters.titleHasDisallowed16GB?.('HP EliteBook 840 G9 16GB SSD512GB'),
+  true,
+  '标题当前规格仅16GB时必须剔除',
+);
+assert.equal(
+  filters.titleHasDisallowed16GB?.('HP EliteBook 840 G9 16GB 最大32GB SSD512GB'),
+  true,
+  '标题当前16GB但仅表示最大支持32GB时必须剔除',
+);
+for (const title of [
+  'HP EliteBook 840 G9 32GB SSD512GB',
+  'HP EliteBook 840 G9 16GB×2 SSD512GB',
+  'HP EliteBook 840 G9 16GBx2 SSD512GB',
+  'HP EliteBook 840 G9 16GB*2 SSD512GB',
+  'HP EliteBook 840 G9 16GB+16GB SSD512GB',
+]) {
+  assert.equal(filters.titleHasDisallowed16GB?.(title), false, `${title} 应保留`);
+}
+assert.equal(
+  filters.hardFilterFailure(eligibleAssessment, Number.POSITIVE_INFINITY, 'HP EliteBook 16GB 最大32GB'),
+  'memory',
+  '新结果必须在写入前剔除标题16GB商品',
+);
+const assessedUpgradeable16GB = assessCandidate({
+  title: 'HP EliteBook 840 G9 16GB 最大32GB',
+  detail: 'メモリ32GB SSD512GB 第12世代 Core i5',
+  price: 60000,
+  itemCondition: '目立った傷や汚れなし',
+}, { allowedSeries, minIntelGeneration: 12, maxConditionLevel: 3 });
+assert.equal(
+  filters.hardFilterFailure(assessedUpgradeable16GB),
+  'memory',
+  '实际评估结果必须携带标题并在写入前剔除可升级16GB商品',
+);
+for (const reason of ['外观或屏幕有缺陷', '严重故障/锁机风险']) {
+  assert.equal(
+    filters.hardFilterFailure({ ...eligibleAssessment, reasons: [reason] }),
+    'risk',
+    `${reason}必须在写入前剔除`,
+  );
+}
+
 assert.equal(filters.resultMatchesHardFilters?.({
   title: 'HP ProBook 450 G9',
   seriesId: 'hp-probook',
@@ -97,5 +141,29 @@ assert.equal(filters.resultMatchesHardFilters({
   hasSSD: true,
   price: null,
 }, allowedSeries, 99999), true);
+assert.equal(filters.resultMatchesHardFilters({
+  title: 'HP EliteBook 840 G9 16GB 最大32GB SSD512GB',
+  seriesId: 'hp-elitebook',
+  has32GB: true,
+  has512GB: true,
+  hasSSD: true,
+}, allowedSeries), false, '已有结果中的标题16GB商品必须被清理');
+assert.equal(filters.resultMatchesHardFilters({
+  title: 'HP EliteBook 840 G9 16GB×2 SSD512GB',
+  seriesId: 'hp-elitebook',
+  has32GB: true,
+  has512GB: true,
+  hasSSD: true,
+}, allowedSeries), true, '明确16GB双条合计32GB必须保留');
+for (const reason of ['外观或屏幕有缺陷', '严重故障/锁机风险']) {
+  assert.equal(filters.resultMatchesHardFilters({
+    title: 'HP EliteBook 840 G9 32GB SSD512GB',
+    seriesId: 'hp-elitebook',
+    has32GB: true,
+    has512GB: true,
+    hasSSD: true,
+    reasons: [reason],
+  }, allowedSeries), false, `已有结果中的${reason}商品必须被清理`);
+}
 
 console.log('laptop filter tests: OK');

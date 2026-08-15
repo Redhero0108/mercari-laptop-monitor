@@ -76,11 +76,29 @@ export function isAllowedLaptopSeries(text, allowedSeries = DEFAULT_ALLOWED_SERI
   return Boolean(series && Array.isArray(allowedSeries) && allowedSeries.includes(series.id));
 }
 
-export function hardFilterFailure(assessment, maxResultPriceYen = Number.POSITIVE_INFINITY) {
+export function titleHasDisallowed16GB(title) {
+  const normalized = compact(title);
+  const explicitDual16GB = /(?<!\d)16\s*(?:gb|g)\s*(?:[x×*]\s*2|\+\s*16\s*(?:gb|g))/i.test(normalized);
+  if (explicitDual16GB) return false;
+  return /(?<!\d)16\s*(?:gb|g)\b/i.test(normalized);
+}
+
+function hasDisallowedRiskReason(reasons) {
+  const text = Array.isArray(reasons) ? reasons.join(' ') : String(reasons ?? '');
+  return /外观或屏幕有缺陷|严重故障\/锁机风险/.test(text);
+}
+
+export function hardFilterFailure(
+  assessment,
+  maxResultPriceYen = Number.POSITIVE_INFINITY,
+  title = assessment?.title,
+) {
   if (assessment?.seriesEligible !== true) return 'series';
   if (assessment?.has32GB !== true) return 'memory';
+  if (titleHasDisallowed16GB(title)) return 'memory';
   if (assessment?.has512GB !== true) return 'storage';
   if (assessment?.hasSSD !== true) return 'ssd';
+  if (hasDisallowedRiskReason(assessment?.reasons)) return 'risk';
   if (Number.isFinite(assessment?.price) && assessment.price > maxResultPriceYen) return 'price';
   return null;
 }
@@ -108,5 +126,13 @@ export function resultMatchesHardFilters(
   );
   const hasSSD = persistedBoolean(entry, 'hasSSD', !/未确认SSD/.test(reasons));
   const priceEligible = !Number.isFinite(entry?.price) || entry.price <= maxResultPriceYen;
-  return seriesEligible && has32GB && has512GB && hasSSD && priceEligible;
+  const titleMemoryEligible = !titleHasDisallowed16GB(entry?.title);
+  const riskEligible = !hasDisallowedRiskReason(entry?.reasons);
+  return seriesEligible
+    && has32GB
+    && has512GB
+    && hasSSD
+    && priceEligible
+    && titleMemoryEligible
+    && riskEligible;
 }

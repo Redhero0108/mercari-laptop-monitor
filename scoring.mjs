@@ -215,6 +215,7 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
 
   const grade = score >= 75 ? 'S' : score >= 60 ? 'A' : score >= 45 ? 'B' : 'C';
   return {
+    title: String(title ?? ''),
     score,
     grade,
     shouldAlert,
