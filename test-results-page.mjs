@@ -37,6 +37,38 @@ assert.deepEqual(
   '商品状态3应显示紧凑中文，同时保留完整原文',
 );
 
+assert.equal(typeof resultsPage.productFacts, 'function', '结果页应提供结构化商品参数');
+assert.equal(typeof resultsPage.sortDescription, 'function', '结果页应提供当前排序文案');
+const { productFacts, sortDescription } = resultsPage;
+assert.deepEqual(
+  productFacts({
+    itemConditionLevel: 3,
+    reasons: [
+      '商品状态第3级',
+      '32GB内存',
+      '512GB存储',
+      'Intel 第13代',
+      '价格合理',
+      '商务本系列',
+      '指定系列： HP EliteBook',
+      '电池描述较好',
+    ],
+  }),
+  ['状态3', '32GB', 'SSD 512GB', 'Intel 第13代', 'HP EliteBook', '电池描述较好'],
+  '商品说明应转成固定顺序的结构化摘要',
+);
+assert.deepEqual(
+  productFacts({
+    itemConditionLevel: 2,
+    reasons: ['商品状态第2级', '32GB内存', '1TB存储', '未确认SSD', 'Ryzen 7', '指定系列：ThinkPad T系列'],
+  }),
+  ['状态2', '32GB', '1TB', 'Ryzen 7', 'ThinkPad T系列'],
+  'SSD未确认时不得在结构化摘要中写成SSD',
+);
+assert.equal(sortDescription('likes', 'desc'), '收藏数 从高到低');
+assert.equal(sortDescription('price', 'asc'), '价格 从低到高');
+assert.equal(sortDescription(), '推荐顺序');
+
 assert.equal(typeof resultsPage.memorySpecConflict, 'function', '结果页应提供标题内存规格矛盾检测');
 assert.equal(typeof resultsPage.isDisplayQualified, 'function', '结果页应提供前端展示资格判断');
 const { memorySpecConflict, isDisplayQualified } = resultsPage;
@@ -244,12 +276,18 @@ assert.match(rendered, /class="best-title"[^>]*>ThinkPad X1 Carbon 32GB 1TB/);
 assert.doesNotMatch(rendered, /BEST SIGNAL/);
 assert.match(rendered, /收藏数（いいね）/);
 const sortKeys = [...rendered.matchAll(/data-sort="([^"]+)"/g)].map((match) => match[1]);
-assert.deepEqual(sortKeys, ['grade', 'price', 'decision', 'likes', 'condition', 'title', 'published', 'time']);
+assert.deepEqual(sortKeys, ['grade', 'price', 'decision', 'likes', 'condition', 'title', 'published']);
+assert.match(rendered, /id="sort-summary"[^>]*>当前排序：推荐顺序</);
+assert.match(rendered, /id="reset-sort"[^>]*hidden[^>]*>恢复推荐顺序</);
+assert.match(rendered, /data-order="0"/);
 assert.match(rendered, /<th[^>]*>[\s\S]*?data-sort="decision"[^>]*>判断/);
+assert.doesNotMatch(rendered, /data-sort="time"|>检查时间</);
+assert.doesNotMatch(rendered, /data-time=/);
 assert.doesNotMatch(rendered, /<th[^>]*>\s*链接/);
 assert.doesNotMatch(rendered, /class="action-cell"/);
 assert.match(rendered, /class="condition-cell" title="3｜目立った傷や汚れなし">3｜无明显伤污/);
 assert.match(rendered, /class="title"[^>]*>HP EliteBook 830 G10 32GB 512GB<span class="external-mark"/);
+assert.match(rendered, /class="product-facts"[^>]*>状态3 ｜ 32GB ｜ SSD 512GB ｜ Intel 第13代</);
 assert.match(rendered, /class="price-detail is-over">\+¥5,000/);
 assert.match(rendered, /class="decision-cell"><span class="decision decision-blocked">超预算 ¥5,000/);
 assert.match(rendered, /class="decision-cell"><span class="decision decision-match">符合提醒/);
@@ -269,7 +307,7 @@ assert.ok(inlineScript, '结果页应包含交互脚本');
 assert.doesNotThrow(() => new Function(inlineScript), '结果页交互脚本必须是有效JavaScript');
 
 const emptyRendered = renderResultsPage([], { likesRefreshMinutes: 10 }, { nowMs: Date.now() });
-assert.match(emptyRendered, /colspan="8"/);
+assert.match(emptyRendered, /colspan="7"/);
 assert.match(emptyRendered, /没有符合当前筛选和搜索的商品/);
 
 const escapedRendered = renderResultsPage([

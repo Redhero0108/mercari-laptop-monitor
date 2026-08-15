@@ -42,6 +42,45 @@ export function compactCondition(entry) {
   };
 }
 
+export function productFacts(entry) {
+  const reasons = Array.isArray(entry?.reasons) ? entry.reasons : [];
+  const facts = [];
+  if (Number.isInteger(entry?.itemConditionLevel)) facts.push(`状态${entry.itemConditionLevel}`);
+  if (reasons.includes('32GB内存')) facts.push('32GB');
+
+  const storage = reasons.includes('1TB存储')
+    ? '1TB'
+    : reasons.includes('512GB存储')
+      ? '512GB'
+      : '';
+  if (storage) facts.push(reasons.includes('未确认SSD') ? storage : `SSD ${storage}`);
+
+  const processor = reasons.find((reason) => /^(?:Intel|Ryzen)\b/i.test(reason));
+  if (processor) facts.push(processor);
+
+  const series = reasons.find((reason) => reason.startsWith('指定系列：'));
+  if (series) facts.push(series.slice('指定系列：'.length).trim());
+
+  for (const detail of ['电池描述较好', '电池状态较差', '外观或屏幕有缺陷', '严重故障/锁机风险']) {
+    if (reasons.includes(detail)) facts.push(detail);
+  }
+  return [...new Set(facts.filter(Boolean))];
+}
+
+export function sortDescription(key, direction) {
+  const labels = {
+    grade: '等级',
+    price: '价格',
+    decision: '判断',
+    likes: '收藏数',
+    condition: '商品状态',
+    title: '商品名称',
+    published: '发布时间',
+  };
+  if (!labels[key]) return '推荐顺序';
+  return `${labels[key]} ${direction === 'asc' ? '从低到高' : '从高到低'}`;
+}
+
 export function formatJstShort(value) {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return { short: '时间不明', full: '时间不明' };
@@ -124,7 +163,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
   const bestEntry = [...qualifiedEntries].sort((a, b) => Number(b.score) - Number(a.score)
     || Number(a.price ?? Infinity) - Number(b.price ?? Infinity))[0] ?? null;
 
-  const resultRows = safeEntries.map((entry) => {
+  const resultRows = safeEntries.map((entry, orderIndex) => {
     const hasPrice = Number.isFinite(entry.price);
     const price = hasPrice ? `¥${Number(entry.price).toLocaleString('ja-JP')}` : '价格不明';
     const likeCount = Number.isInteger(entry.likeCount)
@@ -139,8 +178,8 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     const likeCellTitle = `收藏数最后更新：${likeCheckedText}（${likeFresh ? '数据新鲜' : '等待后台更新'}）`;
     const condition = compactCondition(entry);
     const publishedAt = formatJstShort(entry.publishedAt);
-    const checkedAt = formatJstShort(entry.checkedAt);
     const reasons = Array.isArray(entry.reasons) ? entry.reasons.join('、') : '';
+    const facts = productFacts(entry).join(' ｜ ') || reasons;
     const memoryConflict = memorySpecConflict(entry);
     const shouldAlert = isDisplayQualified(entry);
     const blocker = primaryBlocker(entry, config);
@@ -161,21 +200,21 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     const isRecent = isRecentEntry(entry);
     const newBadge = isRecent ? '<span class="new-badge">新上架</span>' : '';
     const searchable = searchText(entry, price, blocker);
-    return `<tr class="result-row" data-grade="${gradeRank}" data-price="${hasPrice ? entry.price : ''}" data-decision="${decisionRank}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-condition="${Number.isInteger(entry.itemConditionLevel) ? entry.itemConditionLevel : ''}" data-title="${escapeHtml(entry.title)}" data-match="${shouldAlert ? 1 : 0}" data-budget="${isWithinBudget ? 1 : 0}" data-new="${isRecent ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-time="${Date.parse(entry.checkedAt) || 0}" data-search="${escapeHtml(searchable)}">
+    return `<tr class="result-row" data-order="${orderIndex}" data-grade="${gradeRank}" data-price="${hasPrice ? entry.price : ''}" data-decision="${decisionRank}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-condition="${Number.isInteger(entry.itemConditionLevel) ? entry.itemConditionLevel : ''}" data-title="${escapeHtml(entry.title)}" data-match="${shouldAlert ? 1 : 0}" data-budget="${isWithinBudget ? 1 : 0}" data-new="${isRecent ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-search="${escapeHtml(searchable)}">
       <td class="grade-cell"><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">级</span></td>
       <td class="numeric-cell price-cell"><span class="price-main">${escapeHtml(price)}</span>${priceDetail}</td>
       <td class="decision-cell">${decision}</td>
       <td class="numeric-cell like-cell" title="${escapeHtml(likeCellTitle)}"><span>${escapeHtml(likeCount)}</span><span class="freshness-dot ${likeFresh ? 'is-fresh' : 'is-stale'}" aria-hidden="true"></span></td>
       <td class="condition-cell" title="${escapeHtml(condition.title)}">${escapeHtml(condition.label)}</td>
-      <td class="product-cell"><div class="product-title-line">${newBadge}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}<span class="external-mark" aria-hidden="true">↗</span></a></div><div class="product-meta"><span class="reasons" title="${escapeHtml(reasons)}">${escapeHtml(reasons)}</span></div></td>
+      <td class="product-cell"><div class="product-title-line">${newBadge}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}<span class="external-mark" aria-hidden="true">↗</span></a></div><div class="product-meta"><span class="product-facts" title="${escapeHtml(reasons)}">${escapeHtml(facts)}</span></div></td>
       <td class="date-cell" title="${escapeHtml(`${publishedAt.full} JST`)}">${escapeHtml(publishedAt.short)}</td>
-      <td class="date-cell" title="${escapeHtml(`${checkedAt.full} JST`)}">${escapeHtml(checkedAt.short)}</td>
     </tr>`;
   }).join('\n');
 
-  const rows = resultRows || '<tr class="initial-empty"><td class="empty" colspan="8">还没有检查结果，请先运行监测器或诊断模式。</td></tr>';
+  const rows = resultRows || '<tr class="initial-empty"><td class="empty" colspan="7">还没有检查结果，请先运行监测器或诊断模式。</td></tr>';
   const embeddedNormalizeSearch = normalizeSearch.toString();
   const embeddedMatchesResultRow = matchesResultRow.toString();
+  const embeddedSortDescription = sortDescription.toString();
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -225,8 +264,14 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     .search-input { width: clamp(260px, 32vw, 520px); min-height: 34px; padding: 7px 10px; border: 1px solid #d5c9b4; border-radius: 8px; background: #fffefa; color: #303238; font: inherit; font-size: 12px; outline: none; }
     .search-input::placeholder { color: #9a9489; }
     .search-input:focus { border-color: #a77a2d; box-shadow: 0 0 0 3px rgba(167,122,45,.12); }
+    .toolbar-state { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; }
     .toolbar-note { color: #817b70; font-size: 12px; white-space: nowrap; }
     .result-count { min-width: 82px; color: #817b70; font: 700 12px/1.2 "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
+    .sort-summary { color: #6f6a61; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .reset-sort { min-height: 30px; padding: 5px 9px; border: 1px solid #d5c9b4; border-radius: 7px; background: #fffefa; color: #76591f; font: inherit; font-size: 12px; font-weight: 750; white-space: nowrap; cursor: pointer; }
+    .reset-sort:hover { border-color: #b58a3d; background: #f7eedb; }
+    .reset-sort:focus-visible { outline: 2px solid #a77a2d; outline-offset: 2px; }
+    .reset-sort[hidden] { display: none; }
     .panel { overflow: auto; background: #fffefa; border: 1px solid #d8cdb7; border-radius: 12px; box-shadow: 0 10px 30px rgba(72,58,34,.07); scrollbar-color: #b4965d #eee8dc; }
     table { width: 100%; min-width: 1180px; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
     th:nth-child(1) { width: 76px; }
@@ -234,7 +279,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     th:nth-child(3) { width: 145px; }
     th:nth-child(4) { width: 142px; }
     th:nth-child(5) { width: 112px; }
-    th:nth-child(7), th:nth-child(8) { width: 108px; }
+    th:nth-child(7) { width: 108px; }
     th, td { padding: 12px 13px; border-bottom: 1px solid #ebe5da; text-align: left; vertical-align: middle; white-space: nowrap; }
     th { position: sticky; top: 0; z-index: 2; background: #ece6da; color: #735824; font-size: 12px; font-weight: 750; letter-spacing: .025em; box-shadow: inset 0 -1px #d2c6af; }
     tbody tr { transition: background-color .16s ease; }
@@ -269,7 +314,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     .title:hover { color: #a77a2d; text-decoration: underline; text-underline-offset: 3px; }
     .external-mark { margin-left: 5px; color: #a77a2d; font-size: 12px; }
     .product-meta { min-width: 0; margin-top: 5px; }
-    .reasons { display: block; min-width: 0; overflow: hidden; color: #817b72; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .product-facts { display: block; min-width: 0; overflow: hidden; color: #817b72; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
     .decision { display: inline-block; max-width: 210px; padding: 3px 7px; border: 1px solid; border-radius: 5px; font-size: 12px; font-weight: 800; line-height: 1.35; white-space: normal; }
     .decision-match { border-color: #8ebca5; background: #e8f4ed; color: #2f7254; }
     .decision-blocked { border-color: #d5b8a8; background: #f8eee8; color: #985a45; }
@@ -280,7 +325,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     .grade-S { background: linear-gradient(145deg, #c89d47, #8c611f); color: #fffaf0; } .grade-A { background: #3f8766; color: #fff; } .grade-B { background: #d39b31; color: #33250d; } .grade-C { background: #8b8b86; color: #fff; }
     .empty { padding: 48px; color: #817b72; text-align: center; }
     @media (max-width: 1120px) { .page-header { align-items: flex-start; flex-direction: column; gap: 10px; } .header-meta { align-items: flex-start; } .hint { text-align: left; } .best-candidate { grid-template-columns: auto 1fr; } .best-title { grid-column: 1 / -1; } .toolbar-note { display: none; } }
-    @media (max-width: 920px) { .summary-strip { grid-template-columns: repeat(3, minmax(130px, 1fr)); } .filter-button:nth-child(3) { border-right: 0; } .filter-button:nth-child(-n+3) { border-bottom: 1px solid #e5ddcf; } table { min-width: 820px; } th:nth-child(7), td:nth-child(7), th:nth-child(8), td:nth-child(8) { display: none; } }
+    @media (max-width: 920px) { .summary-strip { grid-template-columns: repeat(3, minmax(130px, 1fr)); } .filter-button:nth-child(3) { border-right: 0; } .filter-button:nth-child(-n+3) { border-bottom: 1px solid #e5ddcf; } table { min-width: 820px; } th:nth-child(7), td:nth-child(7) { display: none; } }
     @media (max-width: 700px) { main { width: min(100% - 20px, 1680px); margin-top: 16px; } h1 { white-space: normal; } .summary-strip { grid-template-columns: repeat(2, minmax(120px, 1fr)); } .filter-button { border-right: 1px solid #e5ddcf; border-bottom: 1px solid #e5ddcf; } .filter-button:nth-child(even) { border-right: 0; } .filter-button:last-child { grid-column: 1 / -1; border-right: 0; border-bottom: 0; } .best-candidate { grid-template-columns: 1fr; gap: 6px; } .best-title { grid-column: auto; white-space: normal; } .toolbar { align-items: stretch; flex-direction: column; } .search-group { width: 100%; flex-wrap: wrap; } .search-input { flex: 1 1 240px; width: auto; } table { min-width: 690px; } .decision-cell { min-width: 132px; } .product-cell { min-width: 300px; } th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { display: none; } }
   </style>
 </head>
@@ -308,7 +353,11 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
       <input id="product-search" class="search-input" type="search" aria-label="搜索商品" placeholder="搜索品牌、型号、CPU、判断…" autocomplete="off">
       <output id="result-count" class="result-count" for="product-search" aria-live="polite">显示 ${safeEntries.length} / ${safeEntries.length}</output>
     </div>
-    <span class="toolbar-note">点击上方指标筛选 · 点击栏目排序 · Esc 清空搜索</span>
+    <div class="toolbar-state">
+      <output id="sort-summary" class="sort-summary" aria-live="polite">当前排序：推荐顺序</output>
+      <button id="reset-sort" class="reset-sort" type="button" hidden>恢复推荐顺序</button>
+      <span class="toolbar-note">点击上方指标筛选 · 点击栏目排序 · Esc 清空搜索</span>
+    </div>
   </section>
   <div class="panel"><table>
     <thead><tr>
@@ -319,9 +368,8 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="condition" data-default-direction="asc">商品状态 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="title" data-default-direction="asc">商品 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="published" data-default-direction="desc">发布时间 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
-      <th aria-sort="none"><button type="button" class="sort-button" data-sort="time" data-default-direction="desc">检查时间 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
     </tr></thead>
-    <tbody>${rows}<tr id="no-results-row" hidden><td class="empty" colspan="8">没有符合当前筛选和搜索的商品。</td></tr></tbody>
+    <tbody>${rows}<tr id="no-results-row" hidden><td class="empty" colspan="7">没有符合当前筛选和搜索的商品。</td></tr></tbody>
   </table></div>
 </main>
 <script>
@@ -331,6 +379,8 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     const filterButtons = [...document.querySelectorAll('.filter-button')];
     const searchInput = document.querySelector('#product-search');
     const resultCount = document.querySelector('#result-count');
+    const sortSummary = document.querySelector('#sort-summary');
+    const resetSortButton = document.querySelector('#reset-sort');
     const noResultsRow = document.querySelector('#no-results-row');
     const monitorStatus = document.querySelector('#monitor-status');
     const monitorStatusText = document.querySelector('#monitor-status-text');
@@ -348,6 +398,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
 
     ${embeddedNormalizeSearch}
     ${embeddedMatchesResultRow}
+    ${embeddedSortDescription}
 
     function renderMonitorStatus(status) {
       const heartbeatMs = Date.parse(status?.heartbeatAt) || 0;
@@ -416,7 +467,9 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
         const comparison = typeof a === 'string'
           ? a.localeCompare(b, 'ja-JP', { numeric: true, sensitivity: 'base' })
           : a - b;
-        return direction === 'asc' ? comparison : -comparison;
+        return comparison === 0
+          ? Number(left.dataset.order) - Number(right.dataset.order)
+          : direction === 'asc' ? comparison : -comparison;
       });
       resultRows.forEach((row) => tbody.insertBefore(row, noResultsRow));
       sortButtons.forEach((button) => {
@@ -425,8 +478,26 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
         button.closest('th').setAttribute('aria-sort', active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none');
       });
       currentSort = { key, direction };
+      sortSummary.textContent = '当前排序：' + sortDescription(key, direction);
+      resetSortButton.hidden = false;
       if (remember) {
         try { localStorage.setItem(storageKey, JSON.stringify(currentSort)); } catch {}
+      }
+    }
+
+    function resetRecommendedOrder(remember = true) {
+      const resultRows = [...tbody.querySelectorAll('.result-row')]
+        .sort((left, right) => Number(left.dataset.order) - Number(right.dataset.order));
+      resultRows.forEach((row) => tbody.insertBefore(row, noResultsRow));
+      sortButtons.forEach((button) => {
+        button.querySelector('.sort-icon').textContent = '⇅';
+        button.closest('th').setAttribute('aria-sort', 'none');
+      });
+      currentSort = null;
+      sortSummary.textContent = '当前排序：' + sortDescription();
+      resetSortButton.hidden = true;
+      if (remember) {
+        try { localStorage.removeItem(storageKey); } catch {}
       }
     }
 
@@ -456,6 +527,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
         : button.dataset.defaultDirection;
       applySort(key, direction);
     }));
+    resetSortButton.addEventListener('click', () => resetRecommendedOrder());
 
     filterButtons.forEach((button) => button.addEventListener('click', () => {
       currentFilter = ['all', 'match', 'budget', 'top', 'new'].includes(button.dataset.filter) ? button.dataset.filter : 'all';
@@ -476,6 +548,8 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
 
     if (currentSort && sortButtons.some((button) => button.dataset.sort === currentSort.key)) {
       applySort(currentSort.key, currentSort.direction === 'asc' ? 'asc' : 'desc', false);
+    } else {
+      resetRecommendedOrder(Boolean(currentSort));
     }
     currentFilter = ['all', 'match', 'budget', 'top', 'new'].includes(currentFilter) ? currentFilter : 'all';
     applyVisibility();
