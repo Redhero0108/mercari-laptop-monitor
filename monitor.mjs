@@ -11,7 +11,8 @@ import {
   resultMatchesHardFilters,
 } from './laptop-filters.mjs';
 import { parseLikeCount } from './likes.mjs';
-import { renderResultsPage } from './results-page.mjs';
+import { compareRecommendedEntries, renderResultsPage } from './results-page.mjs';
+import { mergeResultHistory } from './result-history.mjs';
 import { assessCandidate, detectCpu, parsePrice } from './scoring.mjs';
 import { restoreNewlyAllowedSeriesSkips } from './state-migrations.mjs';
 import { extractPublishedAtFromPhotoUrls } from './time.mjs';
@@ -256,8 +257,7 @@ async function writeResultsPageUnlocked() {
       config.allowedSeries,
       config.maxResultPriceYen,
     ))
-    .sort((a, b) => Number(b.shouldAlert) - Number(a.shouldAlert)
-      || String(b.checkedAt).localeCompare(String(a.checkedAt)))
+    .sort(compareRecommendedEntries)
     .slice(0, 500);
   results = Object.fromEntries(entries.map((entry) => [entry.id, entry]));
   await Promise.all([
@@ -278,7 +278,8 @@ async function recordResult(item, assessment) {
     // 每次写入前重新读取磁盘最新版，避免并行监测进程用旧内存覆盖已补查的数据。
     results = await loadResults();
     const previous = results[item.id];
-    results[item.id] = {
+    const now = new Date().toISOString();
+    const current = {
       id: item.id,
       title: item.title,
       url: item.url,
@@ -297,14 +298,18 @@ async function recordResult(item, assessment) {
       seriesLabel: assessment.series?.label ?? null,
       seriesEligible: assessment.seriesEligible,
       likeCount: Number.isInteger(item.likeCount) ? item.likeCount : previous?.likeCount ?? null,
-      likeCheckedAt: new Date().toISOString(),
+      likeCheckedAt: now,
       itemCondition: item.itemCondition ?? previous?.itemCondition ?? null,
       itemConditionLevel: assessment.itemConditionLevel ?? previous?.itemConditionLevel ?? null,
       conditionEligible: assessment.conditionEligible,
-      conditionCheckedAt: new Date().toISOString(),
+      conditionCheckedAt: now,
       publishedAt: item.publishedAt ?? previous?.publishedAt ?? null,
-      checkedAt: new Date().toISOString(),
+      checkedAt: now,
     };
+    results[item.id] = mergeResultHistory(previous, current, now, {
+      firstSeenAt: state.seen[item.id]?.seenAt,
+      price: state.seen[item.id]?.price,
+    });
     await writeResultsPageUnlocked();
   });
 }
@@ -317,7 +322,7 @@ async function recordLiveResult(item, assessment) {
     if (!previous) return;
     const now = new Date().toISOString();
     const hasLikeCount = Number.isInteger(item.likeCount);
-    results[item.id] = {
+    const current = {
       ...previous,
       title: item.title ?? previous.title,
       url: item.url ?? previous.url,
@@ -346,6 +351,10 @@ async function recordLiveResult(item, assessment) {
       publishedAt: item.publishedAt ?? previous.publishedAt ?? null,
       checkedAt: now,
     };
+    results[item.id] = mergeResultHistory(previous, current, now, {
+      firstSeenAt: state.seen[item.id]?.seenAt,
+      price: state.seen[item.id]?.price,
+    });
     change = { previousLike: previous.likeCount, currentLike: results[item.id].likeCount, hasLikeCount };
     await writeResultsPageUnlocked();
   });

@@ -15,13 +15,126 @@ export function memorySpecConflict(entry) {
     : { conflict: false, label: '' };
 }
 
+function detectedStorage(entry) {
+  const reasons = Array.isArray(entry?.reasons) ? entry.reasons : [];
+  if (reasons.includes('1TB存储')) return { value: 1024, label: '1TB' };
+  if (reasons.includes('512GB存储')) return { value: 512, label: '512GB' };
+  return null;
+}
+
+function titleStorage(entry) {
+  const title = String(entry?.title ?? '').normalize('NFKC');
+  if (/(?<!\d)1\s*tb(?![a-z])/i.test(title)) return { value: 1024, label: '1TB' };
+  const match = title.match(/(?<!\d)(128|256|512)\s*(?:gb|g)(?![a-z])/i);
+  return match ? { value: Number(match[1]), label: `${match[1]}GB` } : null;
+}
+
+export function storageSpecConflict(entry) {
+  const titleValue = titleStorage(entry);
+  const detectedValue = detectedStorage(entry);
+  if (!titleValue || !detectedValue || titleValue.value === detectedValue.value) {
+    return { conflict: false, label: '' };
+  }
+  return {
+    conflict: true,
+    label: `标题${titleValue.label} / 检测${detectedValue.label} · 需要人工确认`,
+  };
+}
+
+export function specConfidence(entry) {
+  const memoryConflict = memorySpecConflict(entry);
+  const storageConflict = storageSpecConflict(entry);
+  if (memoryConflict.conflict || storageConflict.conflict) {
+    return { level: 'conflict', label: '规格冲突', detail: memoryConflict.label || storageConflict.label };
+  }
+
+  const reasons = Array.isArray(entry?.reasons) ? entry.reasons : [];
+  const hasMemory = reasons.includes('32GB内存');
+  const storage = detectedStorage(entry);
+  const hasSSD = Boolean(storage) && !reasons.includes('未确认SSD');
+  if (!hasMemory || !storage || !hasSSD) {
+    return { level: 'unknown', label: '信息不足', detail: '尚未完整确认32GB内存与SSD存储' };
+  }
+
+  const title = String(entry?.title ?? '').normalize('NFKC');
+  const titleHas32GB = /(?<!\d)32\s*(?:gb|g)(?![a-z])/i.test(title)
+    || /(?<!\d)16\s*(?:gb|g)\s*(?:[x×*]\s*2|\+\s*16\s*(?:gb|g))/i.test(title);
+  const titleStorageValue = titleStorage(entry);
+  const titleHasSSD = /ssd/i.test(title);
+  if (titleHas32GB && titleStorageValue?.value === storage.value && titleHasSSD) {
+    return { level: 'title', label: '标题确认', detail: '标题与检测结果一致' };
+  }
+  return { level: 'detail', label: '详情确认', detail: '后台详情已确认，标题未完整写出全部规格' };
+}
+
+export function priceTrend(entry) {
+  const history = Array.isArray(entry?.priceHistory)
+    ? entry.priceHistory.filter((point) => Number.isFinite(point?.value) && Number.isFinite(Date.parse(point?.at)))
+    : [];
+  if (history.length < 2) return null;
+  const currentPoint = history.at(-1);
+  const previousPoint = [...history].reverse().find((point) => point.value !== currentPoint.value);
+  if (!previousPoint) return null;
+  return {
+    previous: previousPoint.value,
+    current: currentPoint.value,
+    delta: currentPoint.value - previousPoint.value,
+    changedAt: currentPoint.at,
+  };
+}
+
+export function recentChangeBadges(entry, nowMs = Date.now()) {
+  const cutoff = nowMs - 24 * 60 * 60 * 1000;
+  const isRecent = (value) => {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) && timestamp >= cutoff && timestamp <= nowMs;
+  };
+  const badges = [];
+  if (isRecent(entry?.firstSeenAt)) {
+    badges.push({ kind: 'new', label: '新发现', detail: '最近24小时首次发现' });
+  }
+  const trend = priceTrend(entry);
+  if (trend?.delta < 0 && isRecent(trend.changedAt)) {
+    badges.push({
+      kind: 'price-down',
+      label: '降价',
+      detail: `较前次下降 ¥${Math.abs(trend.delta).toLocaleString('ja-JP')}`,
+    });
+  }
+  const likes = Array.isArray(entry?.likeHistory)
+    ? entry.likeHistory.filter((point) => Number.isInteger(point?.value) && Number.isFinite(Date.parse(point?.at)))
+    : [];
+  if (likes.length >= 2) {
+    const currentPoint = likes.at(-1);
+    const previousPoint = [...likes].reverse().find((point) => point.value !== currentPoint.value);
+    const delta = previousPoint ? currentPoint.value - previousPoint.value : 0;
+    if (delta > 0 && isRecent(currentPoint.at)) {
+      badges.push({ kind: 'likes-up', label: `收藏 +${delta}`, detail: `收藏数由 ${previousPoint.value} 增至 ${currentPoint.value}` });
+    }
+  }
+  return badges;
+}
+
+export function compareRecommendedEntries(left, right) {
+  const qualification = Number(isDisplayQualified(right)) - Number(isDisplayQualified(left));
+  if (qualification !== 0) return qualification;
+  const leftScore = Number.isFinite(left?.score) ? left.score : -Infinity;
+  const rightScore = Number.isFinite(right?.score) ? right.score : -Infinity;
+  if (leftScore !== rightScore) return rightScore - leftScore;
+  const leftPrice = Number.isFinite(left?.price) ? left.price : Infinity;
+  const rightPrice = Number.isFinite(right?.price) ? right.price : Infinity;
+  if (leftPrice !== rightPrice) return leftPrice - rightPrice;
+  return (Date.parse(right?.checkedAt) || 0) - (Date.parse(left?.checkedAt) || 0);
+}
+
 export function isDisplayQualified(entry) {
   const reasons = Array.isArray(entry?.reasons) ? entry.reasons : [];
   return entry?.shouldAlert === true
     && entry?.conditionEligible === true
     && !reasons.includes('严重故障/锁机风险')
     && !reasons.includes('不是目标Windows笔记本')
-    && !memorySpecConflict(entry).conflict;
+    && !memorySpecConflict(entry).conflict
+    && !storageSpecConflict(entry).conflict;
 }
 
 export function compactCondition(entry) {
@@ -117,6 +230,8 @@ export function primaryBlocker(entry, config = {}) {
   if (reasons.includes('不是目标Windows笔记本')) return '非目标Windows笔记本';
   const memoryConflict = memorySpecConflict(entry);
   if (memoryConflict.conflict) return memoryConflict.label;
+  const storageConflict = storageSpecConflict(entry);
+  if (storageConflict.conflict) return storageConflict.label;
   if (entry?.shouldAlert === true && entry?.conditionEligible !== false) return '符合提醒';
   if (!reasons.includes('32GB内存')) return '未确认32GB内存';
   if (!reasons.some((reason) => reason === '512GB存储' || reason === '1TB存储')) {
@@ -135,16 +250,25 @@ export function normalizeSearch(value) {
   return String(value ?? '').normalize('NFKC').toLocaleLowerCase('ja-JP').trim();
 }
 
-export function matchesResultRow(dataset, filter, query) {
-  const validFilter = ['all', 'match', 'budget', 'top', 'new'].includes(filter) ? filter : 'all';
+export function matchesResultRow(dataset, filter, query, options = {}) {
+  const validFilter = ['all', 'match', 'budget', 'top', 'new', 'changed'].includes(filter) ? filter : 'all';
   const filterMatches = validFilter === 'all'
     || (validFilter === 'match' && dataset.match === '1')
     || (validFilter === 'budget' && dataset.budget === '1')
     || (validFilter === 'top' && Number(dataset.grade) >= 3)
-    || (validFilter === 'new' && dataset.new === '1');
+    || (validFilter === 'new' && dataset.new === '1')
+    || (validFilter === 'changed' && dataset.changed === '1');
+  const selectedSeries = options.series || 'all';
+  const seriesMatches = selectedSeries === 'all' || dataset.series === selectedSeries;
+  const selectedTriage = options.triage || 'active';
+  const rowTriage = dataset.triage || 'unseen';
+  const triageMatches = selectedTriage === 'all'
+    || (selectedTriage === 'active' && rowTriage !== 'ignored')
+    || selectedTriage === rowTriage;
   const tokens = normalizeSearch(query).split(/\s+/).filter(Boolean);
   const haystack = normalizeSearch(dataset.search);
-  return filterMatches && tokens.every((token) => haystack.includes(token));
+  return filterMatches && seriesMatches && triageMatches
+    && tokens.every((token) => haystack.includes(token));
 }
 
 export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } = {}) {
@@ -158,10 +282,16 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
   const isRecentEntry = (entry) => entry.publishedAt && Date.parse(entry.publishedAt) >= recentCutoff;
   const qualifiedEntries = safeEntries.filter(isDisplayQualified);
   const budgetEntries = safeEntries.filter((entry) => Number.isFinite(entry.price) && entry.price <= maxPriceYen);
-  const recentEntries = safeEntries.filter(isRecentEntry);
+  const changedEntries = safeEntries.filter((entry) => recentChangeBadges(entry, nowMs).length > 0);
   const topGradeEntries = safeEntries.filter((entry) => entry.grade === 'S' || entry.grade === 'A');
-  const bestEntry = [...qualifiedEntries].sort((a, b) => Number(b.score) - Number(a.score)
-    || Number(a.price ?? Infinity) - Number(b.price ?? Infinity))[0] ?? null;
+  const bestEntry = [...qualifiedEntries].sort(compareRecommendedEntries)[0] ?? null;
+  const seriesOptions = [...new Map(safeEntries
+    .filter((entry) => entry?.seriesId && entry?.seriesLabel)
+    .map((entry) => [String(entry.seriesId), String(entry.seriesLabel)])).entries()]
+    .sort((left, right) => left[1].localeCompare(right[1], 'ja-JP', { numeric: true }));
+  const seriesOptionMarkup = seriesOptions
+    .map(([id, label]) => `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`)
+    .join('');
 
   const resultRows = safeEntries.map((entry, orderIndex) => {
     const hasPrice = Number.isFinite(entry.price);
@@ -178,14 +308,19 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     const likeCellTitle = `收藏数最后更新：${likeCheckedText}（${likeFresh ? '数据新鲜' : '等待后台更新'}）`;
     const condition = compactCondition(entry);
     const publishedAt = formatJstShort(entry.publishedAt);
+    const firstSeenAt = formatJstShort(entry.firstSeenAt);
+    const checkedAt = formatJstShort(entry.checkedAt);
     const reasons = Array.isArray(entry.reasons) ? entry.reasons.join('、') : '';
     const facts = productFacts(entry).join(' ｜ ') || reasons;
     const memoryConflict = memorySpecConflict(entry);
+    const storageConflict = storageSpecConflict(entry);
+    const confidence = specConfidence(entry);
     const shouldAlert = isDisplayQualified(entry);
     const blocker = primaryBlocker(entry, config);
     const decisionClass = shouldAlert
       ? 'decision-match'
-      : memoryConflict.conflict && blocker === memoryConflict.label
+      : (memoryConflict.conflict && blocker === memoryConflict.label)
+          || (storageConflict.conflict && blocker === storageConflict.label)
         ? 'decision-warning'
         : 'decision-blocked';
     const decision = `<span class="decision ${decisionClass}">${escapeHtml(blocker)}</span>`;
@@ -195,18 +330,28 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
         ? '<span class="price-detail is-within">预算内</span>'
         : `<span class="price-detail is-over">+¥${(entry.price - maxPriceYen).toLocaleString('ja-JP')}</span>`
       : '';
+    const trend = priceTrend(entry);
+    const trendMarkup = trend
+      ? `<span class="price-trend ${trend.delta < 0 ? 'trend-down' : 'trend-up'}" title="前价 ¥${trend.previous.toLocaleString('ja-JP')}｜${escapeHtml(`${formatJstShort(trend.changedAt).full} JST`)}">${trend.delta < 0 ? '↓' : '↑'}¥${Math.abs(trend.delta).toLocaleString('ja-JP')}</span>`
+      : '';
     const gradeRank = { S: 4, A: 3, B: 2, C: 1 }[entry.grade] ?? 0;
-    const decisionRank = shouldAlert ? 2 : memoryConflict.conflict ? 1 : 0;
+    const decisionRank = shouldAlert ? 2 : memoryConflict.conflict || storageConflict.conflict ? 1 : 0;
     const isRecent = isRecentEntry(entry);
-    const newBadge = isRecent ? '<span class="new-badge">新上架</span>' : '';
+    const changes = recentChangeBadges(entry, nowMs);
+    const changeMarkup = changes.map((change) => `<span class="change-badge change-${escapeHtml(change.kind)}" title="${escapeHtml(change.detail)}">${escapeHtml(change.label)}</span>`).join('');
+    const itemId = String(entry.id ?? `row-${orderIndex}`);
+    const detailsId = `details-${itemId.replace(/[^a-z0-9_-]/gi, '-')}`;
+    const latestPriceHistory = trend
+      ? `前价 ¥${trend.previous.toLocaleString('ja-JP')} → 当前 ¥${trend.current.toLocaleString('ja-JP')}`
+      : '尚无价格变化';
     const searchable = searchText(entry, price, blocker);
-    return `<tr class="result-row" data-order="${orderIndex}" data-grade="${gradeRank}" data-price="${hasPrice ? entry.price : ''}" data-decision="${decisionRank}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-condition="${Number.isInteger(entry.itemConditionLevel) ? entry.itemConditionLevel : ''}" data-title="${escapeHtml(entry.title)}" data-match="${shouldAlert ? 1 : 0}" data-budget="${isWithinBudget ? 1 : 0}" data-new="${isRecent ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-search="${escapeHtml(searchable)}">
+    return `<tr class="result-row" data-id="${escapeHtml(itemId)}" data-series="${escapeHtml(entry.seriesId ?? '')}" data-changed="${changes.length ? 1 : 0}" data-triage="unseen" data-order="${orderIndex}" data-grade="${gradeRank}" data-price="${hasPrice ? entry.price : ''}" data-decision="${decisionRank}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-condition="${Number.isInteger(entry.itemConditionLevel) ? entry.itemConditionLevel : ''}" data-title="${escapeHtml(entry.title)}" data-match="${shouldAlert ? 1 : 0}" data-budget="${isWithinBudget ? 1 : 0}" data-new="${isRecent ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-search="${escapeHtml(searchable)}">
       <td class="grade-cell"><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">级</span></td>
-      <td class="numeric-cell price-cell"><span class="price-main">${escapeHtml(price)}</span>${priceDetail}</td>
+      <td class="numeric-cell price-cell"><span class="price-main">${escapeHtml(price)}</span>${priceDetail}${trendMarkup}</td>
       <td class="decision-cell">${decision}</td>
       <td class="numeric-cell like-cell" title="${escapeHtml(likeCellTitle)}"><span>${escapeHtml(likeCount)}</span><span class="freshness-dot ${likeFresh ? 'is-fresh' : 'is-stale'}" aria-hidden="true"></span></td>
       <td class="condition-cell" title="${escapeHtml(condition.title)}">${escapeHtml(condition.label)}</td>
-      <td class="product-cell"><div class="product-title-line">${newBadge}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}<span class="external-mark" aria-hidden="true">↗</span></a></div><div class="product-meta"><span class="product-facts" title="${escapeHtml(reasons)}">${escapeHtml(facts)}</span></div></td>
+      <td class="product-cell"><div class="product-title-line">${changeMarkup}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}<span class="external-mark" aria-hidden="true">↗</span></a></div><div class="product-meta"><span class="product-facts" title="${escapeHtml(reasons)}">${escapeHtml(facts)}</span><span class="product-actions"><span class="triage-status">未看</span><button type="button" class="detail-toggle" aria-expanded="false" aria-controls="${escapeHtml(detailsId)}">详情</button></span></div><div id="${escapeHtml(detailsId)}" class="product-details" hidden><div class="detail-grid"><span><strong>规格可信度</strong><span class="confidence confidence-${escapeHtml(confidence.level)}">${escapeHtml(confidence.label)}</span> ${escapeHtml(confidence.detail)}</span><span><strong>完整判断理由</strong>${escapeHtml(reasons || '暂无')}</span><span><strong>原始商品状态</strong>${escapeHtml(entry.itemCondition || '状态不明')}</span><span><strong>时间</strong>首次发现 ${escapeHtml(firstSeenAt.full)} JST ｜ 发布时间 ${escapeHtml(publishedAt.full)} JST ｜ 最后检查 ${escapeHtml(checkedAt.full)} JST</span><span><strong>价格记录</strong>${escapeHtml(latestPriceHistory)}</span></div><div class="triage-controls" role="group" aria-label="设置浏览状态"><span>浏览状态</span><button type="button" class="triage-button" data-triage-action="unseen" aria-pressed="true">未看</button><button type="button" class="triage-button" data-triage-action="watch" aria-pressed="false">关注</button><button type="button" class="triage-button" data-triage-action="ignored" aria-pressed="false">忽略</button></div></div></td>
       <td class="date-cell" title="${escapeHtml(`${publishedAt.full} JST`)}">${escapeHtml(publishedAt.short)}</td>
     </tr>`;
   }).join('\n');
@@ -222,6 +367,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="refresh" content="600">
+  <link rel="icon" href="data:,">
   <title>Mercari 笔记本监测结果</title>
   <style>
     :root { color-scheme: light; font-family: Inter, "Segoe UI", "Microsoft YaHei", "Yu Gothic UI", sans-serif; }
@@ -259,15 +405,19 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     .best-title { min-width: 0; overflow: hidden; color: #72511b; font-size: 13px; font-weight: 720; text-overflow: ellipsis; text-decoration: none; white-space: nowrap; }
     .best-title:hover { color: #a77a2d; text-decoration: underline; text-underline-offset: 3px; }
     .best-empty { color: #817b70; font-size: 12px; }
-    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; margin-bottom: 10px; padding: 7px 10px; border: 1px solid #ddd3c1; border-radius: 10px; background: rgba(255,253,248,.88); }
-    .search-group { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; margin-bottom: 10px; padding: 7px 10px; border: 1px solid #ddd3c1; border-radius: 10px; background: rgba(255,253,248,.88); }
+    .search-group { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; }
     .search-input { width: clamp(260px, 32vw, 520px); min-height: 34px; padding: 7px 10px; border: 1px solid #d5c9b4; border-radius: 8px; background: #fffefa; color: #303238; font: inherit; font-size: 12px; outline: none; }
     .search-input::placeholder { color: #9a9489; }
     .search-input:focus { border-color: #a77a2d; box-shadow: 0 0 0 3px rgba(167,122,45,.12); }
+    .control-select { min-height: 34px; max-width: 180px; padding: 6px 28px 6px 9px; border: 1px solid #d5c9b4; border-radius: 8px; background: #fffefa; color: #4f4d48; font: inherit; font-size: 12px; outline: none; cursor: pointer; }
+    .control-select:focus { border-color: #a77a2d; box-shadow: 0 0 0 3px rgba(167,122,45,.12); }
     .toolbar-state { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; }
     .toolbar-note { color: #817b70; font-size: 12px; white-space: nowrap; }
     .result-count { min-width: 82px; color: #817b70; font: 700 12px/1.2 "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
     .sort-summary { color: #6f6a61; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .recommendation-help { display: inline-grid; width: 25px; height: 25px; flex: 0 0 25px; padding: 0; place-items: center; border: 1px solid #d5c9b4; border-radius: 50%; background: #fffefa; color: #806128; font-family: inherit; font-size: 12px; font-weight: 800; line-height: 1; cursor: help; }
+    .recommendation-help:focus-visible { outline: 2px solid #a77a2d; outline-offset: 2px; }
     .reset-sort { min-height: 30px; padding: 5px 9px; border: 1px solid #d5c9b4; border-radius: 7px; background: #fffefa; color: #76591f; font: inherit; font-size: 12px; font-weight: 750; white-space: nowrap; cursor: pointer; }
     .reset-sort:hover { border-color: #b58a3d; background: #f7eedb; }
     .reset-sort:focus-visible { outline: 2px solid #a77a2d; outline-offset: 2px; }
@@ -304,29 +454,55 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     .price-detail { margin-top: 3px; font-size: 12px; font-weight: 700; }
     .price-detail.is-within { color: #2f7254; }
     .price-detail.is-over { color: #985a45; }
+    .price-trend { display: block; margin-top: 3px; font-size: 12px; font-weight: 800; }
+    .trend-down { color: #2f7254; }
+    .trend-up { color: #985a45; }
     .like-cell { font-variant-numeric: tabular-nums; }
     .freshness-dot { display: inline-block; width: 7px; height: 7px; margin-left: 7px; border-radius: 50%; vertical-align: 1px; }
     .freshness-dot.is-fresh { background: #3f8766; box-shadow: 0 0 0 3px rgba(63,135,102,.12); }
     .freshness-dot.is-stale { background: #b58a3d; box-shadow: 0 0 0 3px rgba(181,138,61,.12); }
     .product-cell { width: 100%; min-width: 440px; }
-    .product-title-line { display: flex; align-items: flex-start; gap: 7px; min-width: 0; }
+    .product-title-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .title { display: -webkit-box; min-width: 0; overflow: hidden; color: #7f5b1d; font-weight: 720; line-height: 1.38; text-decoration: none; letter-spacing: .005em; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .title:hover { color: #a77a2d; text-decoration: underline; text-underline-offset: 3px; }
     .external-mark { margin-left: 5px; color: #a77a2d; font-size: 12px; }
-    .product-meta { min-width: 0; margin-top: 5px; }
-    .product-facts { display: block; min-width: 0; overflow: hidden; color: #817b72; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .change-badge { flex: 0 0 auto; padding: 2px 5px; border: 1px solid #cbbfaa; border-radius: 4px; background: #f7f2e8; color: #745b2f; font-size: 12px; font-weight: 800; line-height: 1.2; white-space: nowrap; }
+    .change-new { border-color: #c2a66f; background: #f7eedb; color: #8f6723; }
+    .change-price-down { border-color: #8ebca5; background: #e8f4ed; color: #2f7254; }
+    .change-likes-up { border-color: #a8b9c7; background: #edf3f7; color: #496b82; }
+    .product-meta { display: flex; align-items: center; gap: 9px; min-width: 0; margin-top: 5px; }
+    .product-facts { display: block; min-width: 0; flex: 1 1 auto; overflow: hidden; color: #817b72; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .product-actions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+    .triage-status { color: #8f6723; font-size: 12px; font-weight: 800; }
+    .result-row.is-seen .triage-status { color: #817b72; }
+    .result-row.is-watch .triage-status { color: #2f7254; }
+    .result-row.is-ignored { opacity: .72; }
+    .detail-toggle { padding: 2px 6px; border: 0; border-radius: 4px; background: transparent; color: #76591f; font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; }
+    .detail-toggle:hover { background: #f3e8d2; }
+    .detail-toggle:focus-visible, .triage-button:focus-visible { outline: 2px solid #a77a2d; outline-offset: 2px; }
+    .product-details { margin-top: 9px; padding: 10px 11px; border-left: 2px solid #c7a25c; background: #faf6ed; color: #5f5b54; font-size: 12px; line-height: 1.55; white-space: normal; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 16px; }
+    .detail-grid strong { margin-right: 7px; color: #5c4926; }
+    .confidence { display: inline-block; margin-right: 5px; padding: 1px 5px; border-radius: 4px; font-weight: 800; }
+    .confidence-title, .confidence-detail { background: #e8f4ed; color: #2f7254; }
+    .confidence-conflict { background: #fff0e7; color: #985a45; }
+    .confidence-unknown { background: #eeeae2; color: #716d65; }
+    .triage-controls { display: flex; align-items: center; gap: 6px; margin-top: 9px; padding-top: 8px; border-top: 1px solid #e4dccd; }
+    .triage-controls > span { margin-right: 2px; color: #5c4926; font-weight: 800; }
+    .triage-button { padding: 3px 8px; border: 1px solid #d5c9b4; border-radius: 5px; background: #fffefa; color: #6d675e; font: inherit; font-size: 12px; cursor: pointer; }
+    .triage-button[aria-pressed="true"] { border-color: #b58a3d; background: #f3e8d2; color: #76591f; font-weight: 800; }
     .decision { display: inline-block; max-width: 210px; padding: 3px 7px; border: 1px solid; border-radius: 5px; font-size: 12px; font-weight: 800; line-height: 1.35; white-space: normal; }
     .decision-match { border-color: #8ebca5; background: #e8f4ed; color: #2f7254; }
     .decision-blocked { border-color: #d5b8a8; background: #f8eee8; color: #985a45; }
     .decision-warning { border-color: #d6bd7c; background: #fff5d9; color: #815d18; }
-    .new-badge { flex: 0 0 auto; margin-top: 1px; padding: 2px 5px; border: 1px solid #c2a66f; border-radius: 4px; background: #f7eedb; color: #8f6723; font-size: 12px; font-weight: 800; line-height: 1.2; white-space: nowrap; }
     .grade { display: inline-grid; width: 27px; height: 27px; place-items: center; border: 1px solid rgba(70,60,40,.12); border-radius: 8px; font-weight: 850; box-shadow: inset 0 1px rgba(255,255,255,.3); }
     .grade-label { margin-left: 5px; color: #817b72; font-size: 12px; }
     .grade-S { background: linear-gradient(145deg, #c89d47, #8c611f); color: #fffaf0; } .grade-A { background: #3f8766; color: #fff; } .grade-B { background: #d39b31; color: #33250d; } .grade-C { background: #8b8b86; color: #fff; }
     .empty { padding: 48px; color: #817b72; text-align: center; }
-    @media (max-width: 1120px) { .page-header { align-items: flex-start; flex-direction: column; gap: 10px; } .header-meta { align-items: flex-start; } .hint { text-align: left; } .best-candidate { grid-template-columns: auto 1fr; } .best-title { grid-column: 1 / -1; } .toolbar-note { display: none; } }
+    @media (max-width: 1120px) { .page-header { align-items: flex-start; flex-direction: column; gap: 10px; } .header-meta { align-items: flex-start; } .hint { text-align: left; } .best-candidate { grid-template-columns: auto 1fr; } .best-title { grid-column: 1 / -1; } .toolbar { flex-wrap: wrap; } .search-group { flex: 1 1 100%; } .toolbar-state { margin-left: auto; } }
     @media (max-width: 920px) { .summary-strip { grid-template-columns: repeat(3, minmax(130px, 1fr)); } .filter-button:nth-child(3) { border-right: 0; } .filter-button:nth-child(-n+3) { border-bottom: 1px solid #e5ddcf; } table { min-width: 820px; } th:nth-child(7), td:nth-child(7) { display: none; } }
-    @media (max-width: 700px) { main { width: min(100% - 20px, 1680px); margin-top: 16px; } h1 { white-space: normal; } .summary-strip { grid-template-columns: repeat(2, minmax(120px, 1fr)); } .filter-button { border-right: 1px solid #e5ddcf; border-bottom: 1px solid #e5ddcf; } .filter-button:nth-child(even) { border-right: 0; } .filter-button:last-child { grid-column: 1 / -1; border-right: 0; border-bottom: 0; } .best-candidate { grid-template-columns: 1fr; gap: 6px; } .best-title { grid-column: auto; white-space: normal; } .toolbar { align-items: stretch; flex-direction: column; } .search-group { width: 100%; flex-wrap: wrap; } .search-input { flex: 1 1 240px; width: auto; } table { min-width: 690px; } .decision-cell { min-width: 132px; } .product-cell { min-width: 300px; } th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { display: none; } }
+    @media (max-width: 700px) { main { width: min(100% - 20px, 1680px); margin-top: 16px; } h1 { white-space: normal; } .summary-strip { grid-template-columns: repeat(2, minmax(120px, 1fr)); } .filter-button { border-right: 1px solid #e5ddcf; border-bottom: 1px solid #e5ddcf; } .filter-button:nth-child(even) { border-right: 0; } .filter-button:last-child { grid-column: 1 / -1; border-right: 0; border-bottom: 0; } .best-candidate { grid-template-columns: 1fr; gap: 6px; } .best-title { grid-column: auto; white-space: normal; } .toolbar { align-items: stretch; flex-direction: column; } .search-group { width: 100%; flex-wrap: wrap; } .search-input { flex: 1 1 240px; width: auto; } .control-select { flex: 1 1 150px; max-width: none; } .toolbar-state { align-self: flex-end; } .detail-grid { grid-template-columns: 1fr; } table { min-width: 690px; } .decision-cell { min-width: 132px; } .product-cell { min-width: 300px; } th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { display: none; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
   </style>
 </head>
 <body><main>
@@ -341,7 +517,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     <button type="button" class="filter-button active" data-filter="all"><span class="metric-label">当前记录</span><strong class="metric-value">${safeEntries.length}</strong></button>
     <button type="button" class="filter-button" data-filter="match"><span class="metric-label">符合提醒</span><strong class="metric-value">${qualifiedEntries.length}</strong></button>
     <button type="button" class="filter-button" data-filter="budget"><span class="metric-label">预算内 ≤ ¥${maxPriceYen.toLocaleString('ja-JP')}</span><strong class="metric-value">${budgetEntries.length}</strong></button>
-    <button type="button" class="filter-button" data-filter="new"><span class="metric-label">24H 新上架</span><strong class="metric-value">${recentEntries.length}</strong></button>
+    <button type="button" class="filter-button" data-filter="changed"><span class="metric-label">24H 有变化</span><strong class="metric-value">${changedEntries.length}</strong></button>
     <button type="button" class="filter-button" data-filter="top"><span class="metric-label">S / A 级</span><strong class="metric-value">${topGradeEntries.length}</strong></button>
   </section>
   <section class="best-candidate" aria-label="当前最佳候选">
@@ -351,12 +527,14 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
   <section class="toolbar" aria-label="商品搜索">
     <div class="search-group">
       <input id="product-search" class="search-input" type="search" aria-label="搜索商品" placeholder="搜索品牌、型号、CPU、判断…" autocomplete="off">
+      <select id="series-filter" class="control-select" aria-label="筛选系列"><option value="all">全部系列</option>${seriesOptionMarkup}</select>
+      <select id="triage-filter" class="control-select" aria-label="筛选浏览状态"><option value="active">活跃商品</option><option value="unseen">未看</option><option value="watch">关注</option><option value="seen">已看</option><option value="ignored">忽略</option><option value="all">全部（含忽略）</option></select>
       <output id="result-count" class="result-count" for="product-search" aria-live="polite">显示 ${safeEntries.length} / ${safeEntries.length}</output>
     </div>
     <div class="toolbar-state">
       <output id="sort-summary" class="sort-summary" aria-live="polite">当前排序：推荐顺序</output>
+      <button type="button" class="recommendation-help" title="推荐顺序：符合提醒优先，其次按评分、价格和检查时间排序" aria-label="查看推荐顺序说明">?</button>
       <button id="reset-sort" class="reset-sort" type="button" hidden>恢复推荐顺序</button>
-      <span class="toolbar-note">点击上方指标筛选 · 点击栏目排序 · Esc 清空搜索</span>
     </div>
   </section>
   <div class="panel"><table>
@@ -378,6 +556,8 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     const sortButtons = [...document.querySelectorAll('.sort-button')];
     const filterButtons = [...document.querySelectorAll('.filter-button')];
     const searchInput = document.querySelector('#product-search');
+    const seriesFilter = document.querySelector('#series-filter');
+    const triageFilter = document.querySelector('#triage-filter');
     const resultCount = document.querySelector('#result-count');
     const sortSummary = document.querySelector('#sort-summary');
     const resetSortButton = document.querySelector('#reset-sort');
@@ -387,13 +567,27 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     const storageKey = 'mercari-laptop-monitor-sort';
     const filterStorageKey = 'mercari-laptop-monitor-filter';
     const searchStorageKey = 'mercari-laptop-monitor-search';
+    const seriesStorageKey = 'mercari-laptop-monitor-series';
+    const triageFilterStorageKey = 'mercari-laptop-monitor-triage-filter';
+    const triageStorageKey = 'mercari-laptop-monitor-triage-v1';
     const pollMinutes = ${JSON.stringify(pollMinutes)};
     let currentSort = null;
     let currentFilter = 'all';
     let currentSearch = '';
+    let currentSeries = 'all';
+    let currentTriageFilter = 'active';
+    let triageState = {};
     try { currentSort = JSON.parse(localStorage.getItem(storageKey)); } catch {}
     try { currentFilter = localStorage.getItem(filterStorageKey) || 'all'; } catch {}
     try { currentSearch = localStorage.getItem(searchStorageKey) || ''; } catch {}
+    try { currentSeries = localStorage.getItem(seriesStorageKey) || 'all'; } catch {}
+    try { currentTriageFilter = localStorage.getItem(triageFilterStorageKey) || 'active'; } catch {}
+    try {
+      const parsedTriage = JSON.parse(localStorage.getItem(triageStorageKey));
+      triageState = parsedTriage && typeof parsedTriage === 'object' && !Array.isArray(parsedTriage)
+        ? parsedTriage
+        : {};
+    } catch {}
     searchInput.value = currentSearch;
 
     ${embeddedNormalizeSearch}
@@ -501,11 +695,50 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
       }
     }
 
+    function normalizeTriage(value) {
+      return ['unseen', 'seen', 'watch', 'ignored'].includes(value) ? value : 'unseen';
+    }
+
+    function applyRowTriage(row, value) {
+      const triage = normalizeTriage(value);
+      const labels = { unseen: '未看', seen: '已看', watch: '关注', ignored: '忽略' };
+      row.dataset.triage = triage;
+      row.classList.toggle('is-seen', triage === 'seen');
+      row.classList.toggle('is-watch', triage === 'watch');
+      row.classList.toggle('is-ignored', triage === 'ignored');
+      const status = row.querySelector('.triage-status');
+      if (status) status.textContent = labels[triage];
+      row.querySelectorAll('.triage-button').forEach((button) => {
+        button.setAttribute('aria-pressed', String(button.dataset.triageAction === triage));
+      });
+    }
+
+    function persistTriage() {
+      const entries = Object.entries(triageState)
+        .filter(([, value]) => ['seen', 'watch', 'ignored'].includes(value))
+        .slice(-1000);
+      triageState = Object.fromEntries(entries);
+      try { localStorage.setItem(triageStorageKey, JSON.stringify(triageState)); } catch {}
+    }
+
+    function setTriage(row, value) {
+      const triage = normalizeTriage(value);
+      const id = row.dataset.id;
+      if (triage === 'unseen') delete triageState[id];
+      else triageState[id] = triage;
+      applyRowTriage(row, triage);
+      persistTriage();
+      applyVisibility();
+    }
+
     function applyVisibility({ rememberFilter = false, rememberSearch = false } = {}) {
       const resultRows = [...tbody.querySelectorAll('.result-row')];
       let visibleCount = 0;
       resultRows.forEach((row) => {
-        const visible = matchesResultRow(row.dataset, currentFilter, currentSearch);
+        const visible = matchesResultRow(row.dataset, currentFilter, currentSearch, {
+          series: currentSeries,
+          triage: currentTriageFilter,
+        });
         row.hidden = !visible;
         if (visible) visibleCount += 1;
       });
@@ -530,8 +763,41 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     resetSortButton.addEventListener('click', () => resetRecommendedOrder());
 
     filterButtons.forEach((button) => button.addEventListener('click', () => {
-      currentFilter = ['all', 'match', 'budget', 'top', 'new'].includes(button.dataset.filter) ? button.dataset.filter : 'all';
+      currentFilter = ['all', 'match', 'budget', 'top', 'changed'].includes(button.dataset.filter) ? button.dataset.filter : 'all';
       applyVisibility({ rememberFilter: true });
+    }));
+
+    seriesFilter.addEventListener('change', () => {
+      currentSeries = [...seriesFilter.options].some((option) => option.value === seriesFilter.value)
+        ? seriesFilter.value
+        : 'all';
+      try { localStorage.setItem(seriesStorageKey, currentSeries); } catch {}
+      applyVisibility();
+    });
+
+    triageFilter.addEventListener('change', () => {
+      currentTriageFilter = ['active', 'unseen', 'seen', 'watch', 'ignored', 'all'].includes(triageFilter.value)
+        ? triageFilter.value
+        : 'active';
+      try { localStorage.setItem(triageFilterStorageKey, currentTriageFilter); } catch {}
+      applyVisibility();
+    });
+
+    tbody.querySelectorAll('.detail-toggle').forEach((button) => button.addEventListener('click', () => {
+      const panel = document.getElementById(button.getAttribute('aria-controls'));
+      const expanded = button.getAttribute('aria-expanded') === 'true';
+      button.setAttribute('aria-expanded', String(!expanded));
+      button.textContent = expanded ? '详情' : '收起';
+      panel.hidden = expanded;
+    }));
+
+    tbody.querySelectorAll('.triage-button').forEach((button) => button.addEventListener('click', () => {
+      setTriage(button.closest('.result-row'), button.dataset.triageAction);
+    }));
+
+    tbody.querySelectorAll('.title').forEach((link) => link.addEventListener('click', () => {
+      const row = link.closest('.result-row');
+      if (row.dataset.triage === 'unseen') setTriage(row, 'seen');
     }));
 
     searchInput.addEventListener('input', () => {
@@ -546,12 +812,22 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
       }
     });
 
+    [...tbody.querySelectorAll('.result-row')].forEach((row) => {
+      applyRowTriage(row, triageState[row.dataset.id]);
+    });
+    currentFilter = currentFilter === 'new' ? 'changed' : currentFilter;
     if (currentSort && sortButtons.some((button) => button.dataset.sort === currentSort.key)) {
       applySort(currentSort.key, currentSort.direction === 'asc' ? 'asc' : 'desc', false);
     } else {
       resetRecommendedOrder(Boolean(currentSort));
     }
-    currentFilter = ['all', 'match', 'budget', 'top', 'new'].includes(currentFilter) ? currentFilter : 'all';
+    currentFilter = ['all', 'match', 'budget', 'top', 'changed'].includes(currentFilter) ? currentFilter : 'all';
+    currentSeries = [...seriesFilter.options].some((option) => option.value === currentSeries) ? currentSeries : 'all';
+    currentTriageFilter = ['active', 'unseen', 'seen', 'watch', 'ignored', 'all'].includes(currentTriageFilter)
+      ? currentTriageFilter
+      : 'active';
+    seriesFilter.value = currentSeries;
+    triageFilter.value = currentTriageFilter;
     applyVisibility();
     refreshMonitorStatus();
   })();

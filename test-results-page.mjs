@@ -109,6 +109,98 @@ assert.equal(
   false,
   '即使持久化提醒状态异常，安全风险商品也不得进入前端合格结果',
 );
+
+for (const helper of ['storageSpecConflict', 'specConfidence', 'priceTrend', 'recentChangeBadges', 'compareRecommendedEntries']) {
+  assert.equal(typeof resultsPage[helper], 'function', `结果页应提供${helper}辅助函数`);
+}
+const {
+  storageSpecConflict,
+  specConfidence,
+  priceTrend,
+  recentChangeBadges,
+  compareRecommendedEntries,
+} = resultsPage;
+assert.deepEqual(
+  storageSpecConflict({ title: 'EliteBook 32GB SSD512GB', reasons: ['1TB存储'] }),
+  { conflict: true, label: '标题512GB / 检测1TB · 需要人工确认' },
+  '标题存储和检测存储不一致时应要求人工确认',
+);
+assert.deepEqual(
+  storageSpecConflict({ title: 'EliteBook 32GB SSD 512GB', reasons: ['512GB存储'] }),
+  { conflict: false, label: '' },
+  '标题和检测存储一致时不得误报',
+);
+assert.deepEqual(
+  storageSpecConflict({ title: 'EliteBook 32GB SSD256GB', reasons: ['512GB存储'] }),
+  { conflict: true, label: '标题256GB / 检测512GB · 需要人工确认' },
+  '标题明确写256GB时应识别存储冲突',
+);
+
+const titleConfirmed = {
+  ...baseEntry,
+  title: 'HP EliteBook 830 G10 32GB SSD 512GB',
+  reasons: [...goodReasons, '指定系列：HP EliteBook'],
+};
+assert.equal(specConfidence(titleConfirmed).label, '标题确认');
+assert.equal(specConfidence({ ...titleConfirmed, title: 'HP EliteBook 830 G10' }).label, '详情确认');
+assert.equal(
+  specConfidence({ ...titleConfirmed, title: 'HP EliteBook 16GB SSD 512GB' }).label,
+  '规格冲突',
+);
+assert.equal(specConfidence({ title: 'HP EliteBook', reasons: [] }).label, '信息不足');
+assert.equal(
+  isDisplayQualified({ ...titleConfirmed, title: 'HP EliteBook 32GB SSD 256GB', shouldAlert: true, conditionEligible: true }),
+  false,
+  '存储规格冲突商品不得显示为符合提醒',
+);
+assert.equal(
+  primaryBlocker(
+    { ...titleConfirmed, title: 'HP EliteBook 32GB SSD 256GB', shouldAlert: true, conditionEligible: true },
+    { maxPriceYen: 95000 },
+  ),
+  '标题256GB / 检测512GB · 需要人工确认',
+  '存储规格冲突应成为主要判断原因',
+);
+
+const changedHistoryEntry = {
+  firstSeenAt: '2026-08-15T00:00:00.000Z',
+  priceHistory: [
+    { value: 70000, at: '2026-08-14T00:00:00.000Z' },
+    { value: 65000, at: '2026-08-15T10:00:00.000Z' },
+  ],
+  likeHistory: [
+    { value: 3, at: '2026-08-14T00:00:00.000Z' },
+    { value: 5, at: '2026-08-15T11:00:00.000Z' },
+  ],
+};
+assert.deepEqual(
+  priceTrend(changedHistoryEntry),
+  { previous: 70000, current: 65000, delta: -5000, changedAt: '2026-08-15T10:00:00.000Z' },
+  '价格趋势应比较最近两个不同价格',
+);
+assert.equal(priceTrend({ priceHistory: [{ value: 65000, at: '2026-08-15T10:00:00.000Z' }] }), null);
+assert.deepEqual(
+  recentChangeBadges(changedHistoryEntry, Date.parse('2026-08-15T12:00:00.000Z')).map((badge) => badge.label),
+  ['新发现', '降价', '收藏 +2'],
+  '24小时变化应区分新发现、降价和收藏增加',
+);
+assert.deepEqual(
+  recentChangeBadges(changedHistoryEntry, Date.parse('2026-08-17T12:00:00.000Z')),
+  [],
+  '超过24小时的变化不得继续显示短期标记',
+);
+
+const recommendedEntries = [
+  { ...titleConfirmed, id: 'unqualified', shouldAlert: false, conditionEligible: true, score: 100, price: 50000, checkedAt: '2026-08-15T11:00:00.000Z' },
+  { ...titleConfirmed, id: 'lower-score', shouldAlert: true, conditionEligible: true, score: 70, price: 60000, checkedAt: '2026-08-15T10:00:00.000Z' },
+  { ...titleConfirmed, id: 'higher-price', shouldAlert: true, conditionEligible: true, score: 80, price: 70000, checkedAt: '2026-08-15T10:00:00.000Z' },
+  { ...titleConfirmed, id: 'recommended', shouldAlert: true, conditionEligible: true, score: 80, price: 65000, checkedAt: '2026-08-15T09:00:00.000Z' },
+];
+assert.deepEqual(
+  [...recommendedEntries].sort(compareRecommendedEntries).map((entry) => entry.id),
+  ['recommended', 'higher-price', 'lower-score', 'unqualified'],
+  '推荐顺序应依次比较资格、分数和价格',
+);
 assert.equal(typeof resultsPage.formatJstShort, 'function', '结果页应提供统一的JST短时间格式');
 const { formatJstShort } = resultsPage;
 assert.deepEqual(
@@ -198,11 +290,42 @@ assert.equal(
   false,
   '预算内筛选应隐藏超出提醒线的商品',
 );
+assert.equal(
+  matchesResultRow(
+    { match: '1', changed: '1', grade: '3', search: 'elitebook', series: 'hp-elitebook', triage: 'watch' },
+    'changed',
+    'EliteBook',
+    { series: 'hp-elitebook', triage: 'watch' },
+  ),
+  true,
+  '变化、搜索、系列和浏览状态筛选应能同时命中',
+);
+assert.equal(
+  matchesResultRow(
+    { match: '1', changed: '1', grade: '3', search: 'elitebook', series: 'hp-elitebook', triage: 'ignored' },
+    'all',
+    '',
+    { series: 'all', triage: 'active' },
+  ),
+  false,
+  '默认活跃商品筛选应隐藏忽略项',
+);
+assert.equal(
+  matchesResultRow(
+    { match: '1', changed: '1', grade: '3', search: 'elitebook', series: 'hp-elitebook', triage: 'ignored' },
+    'all',
+    '',
+    { series: 'all', triage: 'ignored' },
+  ),
+  true,
+  '忽略筛选应重新显示忽略项',
+);
 
 const renderEntries = [
   {
     ...baseEntry,
     id: 'm1',
+    title: 'HP EliteBook 830 G10 32GB SSD 512GB',
     url: 'https://jp.mercari.com/item/m1',
     price: 100000,
     score: 55,
@@ -211,6 +334,17 @@ const renderEntries = [
     conditionEligible: true,
     likeCount: 4,
     likeCheckedAt: '2026-08-12T03:00:00.000Z',
+    firstSeenAt: '2026-08-12T01:00:00.000Z',
+    priceHistory: [
+      { value: 105000, at: '2026-08-11T03:00:00.000Z' },
+      { value: 100000, at: '2026-08-12T03:00:00.000Z' },
+    ],
+    likeHistory: [
+      { value: 2, at: '2026-08-11T03:00:00.000Z' },
+      { value: 4, at: '2026-08-12T03:00:00.000Z' },
+    ],
+    seriesId: 'hp-elitebook',
+    seriesLabel: 'HP EliteBook',
     publishedAt: '2026-08-12T01:30:00.000Z',
     checkedAt: '2026-08-12T03:00:00.000Z',
   },
@@ -227,6 +361,8 @@ const renderEntries = [
     reasons: ['商品状态第2级', '32GB内存', '1TB存储', 'Intel 第13代'],
     itemConditionLevel: 2,
     itemCondition: '未使用に近い',
+    seriesId: 'thinkpad-x1-carbon',
+    seriesLabel: 'ThinkPad X1 Carbon',
     likeCount: 8,
     likeCheckedAt: '2026-08-12T03:00:00.000Z',
     publishedAt: '2026-08-12T02:00:00.000Z',
@@ -245,6 +381,8 @@ const renderEntries = [
     reasons: ['商品状态第2级', '32GB内存', '1TB存储', 'Intel 第13代'],
     itemConditionLevel: 2,
     itemCondition: '未使用に近い',
+    seriesId: 'hp-elitebook',
+    seriesLabel: 'HP EliteBook',
     likeCount: 3,
     likeCheckedAt: '2026-08-12T03:00:00.000Z',
     publishedAt: '2026-08-12T02:30:00.000Z',
@@ -267,9 +405,12 @@ assert.match(rendered, /aria-label="搜索商品"/);
 assert.match(rendered, /id="result-count"/);
 assert.match(rendered, /mercari-laptop-monitor-search/);
 assert.match(rendered, /<title>Mercari 笔记本监测结果<\/title>/);
+assert.match(rendered, /<link rel="icon" href="data:,">/);
 assert.match(rendered, /class="summary-strip"/);
 assert.doesNotMatch(rendered, /summary-card/);
 assert.match(rendered, /data-filter="budget"[^>]*>[\s\S]*?预算内 ≤ ¥95,000[\s\S]*?>2</);
+assert.match(rendered, /data-filter="changed"[^>]*>[\s\S]*?24H 有变化[\s\S]*?>1</);
+assert.doesNotMatch(rendered, /data-filter="new"[^>]*>[\s\S]*?24H 新上架/);
 assert.match(rendered, /class="best-candidate"/);
 assert.match(rendered, /当前最佳候选/);
 assert.match(rendered, /class="best-title"[^>]*>ThinkPad X1 Carbon 32GB 1TB/);
@@ -278,16 +419,35 @@ assert.match(rendered, /收藏数（いいね）/);
 const sortKeys = [...rendered.matchAll(/data-sort="([^"]+)"/g)].map((match) => match[1]);
 assert.deepEqual(sortKeys, ['grade', 'price', 'decision', 'likes', 'condition', 'title', 'published']);
 assert.match(rendered, /id="sort-summary"[^>]*>当前排序：推荐顺序</);
+assert.match(rendered, /class="recommendation-help"[^>]*title="推荐顺序：符合提醒优先，其次按评分、价格和检查时间排序"/);
 assert.match(rendered, /id="reset-sort"[^>]*hidden[^>]*>恢复推荐顺序</);
+assert.match(rendered, /id="series-filter"[^>]*aria-label="筛选系列"/);
+assert.match(rendered, /value="hp-elitebook">HP EliteBook</);
+assert.match(rendered, /value="thinkpad-x1-carbon">ThinkPad X1 Carbon</);
+assert.match(rendered, /id="triage-filter"[^>]*aria-label="筛选浏览状态"/);
+assert.match(rendered, /value="active">活跃商品</);
 assert.match(rendered, /data-order="0"/);
+assert.match(rendered, /data-id="m1"[^>]*data-series="hp-elitebook"[^>]*data-changed="1"/);
 assert.match(rendered, /<th[^>]*>[\s\S]*?data-sort="decision"[^>]*>判断/);
 assert.doesNotMatch(rendered, /data-sort="time"|>检查时间</);
 assert.doesNotMatch(rendered, /data-time=/);
 assert.doesNotMatch(rendered, /<th[^>]*>\s*链接/);
 assert.doesNotMatch(rendered, /class="action-cell"/);
 assert.match(rendered, /class="condition-cell" title="3｜目立った傷や汚れなし">3｜无明显伤污/);
-assert.match(rendered, /class="title"[^>]*>HP EliteBook 830 G10 32GB 512GB<span class="external-mark"/);
+assert.match(rendered, /class="title"[^>]*>HP EliteBook 830 G10 32GB SSD 512GB<span class="external-mark"/);
 assert.match(rendered, /class="product-facts"[^>]*>状态3 ｜ 32GB ｜ SSD 512GB ｜ Intel 第13代</);
+assert.match(rendered, /class="change-badge change-new"[^>]*>新发现</);
+assert.match(rendered, /class="change-badge change-price-down"[^>]*>降价</);
+assert.match(rendered, /class="change-badge change-likes-up"[^>]*>收藏 \+2</);
+assert.match(rendered, /class="price-trend trend-down"[^>]*>↓¥5,000</);
+assert.match(rendered, /class="triage-status"[^>]*>未看</);
+assert.match(rendered, /class="detail-toggle"[^>]*aria-expanded="false"[^>]*aria-controls="details-m1"[^>]*>详情</);
+assert.match(rendered, /id="details-m1" class="product-details" hidden/);
+assert.match(rendered, /class="confidence confidence-title"[^>]*>标题确认</);
+assert.match(rendered, /完整判断理由/);
+assert.match(rendered, /原始商品状态/);
+assert.match(rendered, /最后检查/);
+assert.match(rendered, /data-triage-action="watch"[^>]*aria-pressed="false"[^>]*>关注</);
 assert.match(rendered, /class="price-detail is-over">\+¥5,000/);
 assert.match(rendered, /class="decision-cell"><span class="decision decision-blocked">超预算 ¥5,000/);
 assert.match(rendered, /class="decision-cell"><span class="decision decision-match">符合提醒/);
@@ -299,12 +459,15 @@ assert.match(rendered, /收藏数最后更新：2026\/08\/12 12:00 JST/);
 assert.match(rendered, /后台正常｜上次检查/);
 assert.match(rendered, /｜下次约/);
 assert.match(rendered, /@media \(max-width: 920px\)/);
+assert.match(rendered, /@media \(prefers-reduced-motion: reduce\)/);
 assert.doesNotMatch(rendered, /status-pulse/);
 assert.doesNotMatch(rendered, /font-size: (?:8|9|10|11)px/);
 
 const inlineScript = rendered.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1];
 assert.ok(inlineScript, '结果页应包含交互脚本');
 assert.doesNotThrow(() => new Function(inlineScript), '结果页交互脚本必须是有效JavaScript');
+assert.match(inlineScript, /mercari-laptop-monitor-triage-v1/);
+assert.match(inlineScript, /mercari-laptop-monitor-series/);
 
 const emptyRendered = renderResultsPage([], { likesRefreshMinutes: 10 }, { nowMs: Date.now() });
 assert.match(emptyRendered, /colspan="7"/);
