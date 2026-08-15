@@ -49,7 +49,7 @@ const SERIES_RULES = [
   {
     id: 'vaio-pro',
     label: 'VAIO Pro',
-    pattern: /\bvaio\s*pro\b/i,
+    pattern: /\bvaio\s*pro(?:\b|(?=(?:pj|pg|pk|bk|bm)\b))/i,
   },
   {
     id: 'dell-latitude-premium',

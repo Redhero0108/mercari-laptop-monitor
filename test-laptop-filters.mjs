@@ -15,6 +15,7 @@ const seriesCases = [
   ['NEC VersaPro UltraLite タイプVN Core i5', 'nec-versapro-premium'],
   ['ASUS ExpertBook B9400 Core i7', 'asus-expertbook-b9'],
   ['VAIO Pro PJ VJPJ23 Core i7', 'vaio-pro'],
+  ['美品VAIO ProPJ 12.5型 i7-1360P', 'vaio-pro'],
   ['Dell Latitude 5350 Core Ultra 5', 'dell-latitude-premium'],
   ['Dell Latitude 7450 Core Ultra 7', 'dell-latitude-premium'],
   ['Dell Latitude 9450 Core Ultra 7', 'dell-latitude-premium'],
