@@ -7,6 +7,7 @@ const seriesCases = [
   ['X1 Carbon Gen10', 'thinkpad-x1-carbon'],
   ['HP ProBook 450 G9', 'hp-probook'],
   ['Dell Precision 5570', 'dell-precision'],
+  ['Dell Precision7780 Core i9', 'dell-precision'],
   ["Panasonic Let's note CF-SV2", 'panasonic-lets-note'],
   ['レッツノート CF-FV3', 'panasonic-lets-note'],
   ['CF-SV2 Core i5', 'panasonic-lets-note'],

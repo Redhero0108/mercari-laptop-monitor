@@ -19,7 +19,7 @@ const SERIES_RULES = [
   {
     id: 'dell-precision',
     label: 'Dell Precision',
-    pattern: /(?:\bdell\s+)?\bprecision\b/i,
+    pattern: /(?:\bdell\s+)?\bprecision(?:\b|(?=\d{4}\b))/i,
   },
   {
     id: 'panasonic-lets-note',
