@@ -74,6 +74,10 @@ assert.equal(
   '超预算 ¥5,000',
 );
 assert.equal(
+  primaryBlocker({ ...baseEntry, price: 70001 }),
+  '超预算 ¥1',
+);
+assert.equal(
   primaryBlocker({ ...baseEntry, score: 50 }, { maxPriceYen: 95000, minScore: 58 }),
   '评分低于提醒线',
 );

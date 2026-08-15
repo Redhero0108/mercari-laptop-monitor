@@ -31,6 +31,36 @@ const SERIES_RULES = [
     label: 'Dynabook G83',
     pattern: /\bdynabook\s*g83\b|(?:^|\s)g83(?:\/[a-z0-9]+)?\b/i,
   },
+  {
+    id: 'fujitsu-lifebook-u7412',
+    label: 'Fujitsu LIFEBOOK U7412',
+    pattern: /\blife\s*book\s*u7412\b/i,
+  },
+  {
+    id: 'nec-versapro-premium',
+    label: 'NEC VersaPro Premium Mobile',
+    pattern: /^(?=.*\bversapro\b)(?=.*(?:ultra\s*lite|タイプ\s*v(?:n|g|h|m)\b))/i,
+  },
+  {
+    id: 'asus-expertbook-b9',
+    label: 'ASUS ExpertBook B9',
+    pattern: /\bexpert\s*book\s*b9(?:\d{3})?\b/i,
+  },
+  {
+    id: 'vaio-pro',
+    label: 'VAIO Pro',
+    pattern: /\bvaio\s*pro\b/i,
+  },
+  {
+    id: 'dell-latitude-premium',
+    label: 'Dell Latitude 5000/7000/9000',
+    pattern: /\blatitude\s*(?:5|7|9)\d{3}\b/i,
+  },
+  {
+    id: 'hp-elitebook',
+    label: 'HP EliteBook',
+    pattern: /(?:\bhp\s+)?\belite\s*book\b/i,
+  },
 ];
 
 export const DEFAULT_ALLOWED_SERIES = Object.freeze(SERIES_RULES.map(({ id }) => id));

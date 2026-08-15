@@ -1,6 +1,6 @@
 {
   "pollMinutes": 10,
-  "maxPriceYen": 95000,
+  "maxPriceYen": 70000,
   "maxResultPriceYen": 99999,
   "minScore": 58,
   "minIntelGeneration": 12,
@@ -18,7 +18,13 @@
     "hp-probook",
     "dell-precision",
     "panasonic-lets-note",
-    "dynabook-g83"
+    "dynabook-g83",
+    "fujitsu-lifebook-u7412",
+    "nec-versapro-premium",
+    "asus-expertbook-b9",
+    "vaio-pro",
+    "dell-latitude-premium",
+    "hp-elitebook"
   ],
   "excludeKeywords": [
     "ジャンク",

@@ -6,7 +6,8 @@
 - 32GB内存
 - 512GB以上SSD（1TB额外加分）
 - Intel第12代以上（同时接受更新的Core Ultra；不接受Ryzen/AMD）
-- 系列只接受ThinkPad X1 Carbon、HP ProBook、Dell Precision、Panasonic Let's note、Dynabook G83
+- 系列只接受11类品质商务本：ThinkPad X1 Carbon、HP ProBook、Dell Precision、Panasonic Let's note、Dynabook G83、LIFEBOOK U7412、品质型NEC VersaPro、ExpertBook B9、VAIO Pro、Latitude 5000/7000/9000、HP EliteBook
+- 价格不超过¥70,000且满足其他条件时才提醒；¥70,001～¥99,999只保留在结果页供参考
 - 价格达到¥100,000的商品不进入结果列表（最高保留¥99,999）
 - 商品状态只接受第1～3级（新品、未使用／未使用に近い／目立った傷や汚れなし）
 - 排除Celeron、JUNK／ジャンク、部品取り、破损、锁机等高风险商品
@@ -54,6 +55,12 @@ mercari-watch keywords replace-all `
   --keyword "Dell Precision 32GB" `
   --keyword "レッツノート 32GB" `
   --keyword "dynabook G83 32GB" `
+  --keyword "LIFEBOOK U7412 32GB" `
+  --keyword "NEC VersaPro 32GB" `
+  --keyword "ExpertBook B9 32GB" `
+  --keyword "VAIO Pro 32GB" `
+  --keyword "Dell Latitude 32GB" `
+  --keyword "HP EliteBook 32GB" `
   --dry-run
 
 # 启动一次检查；默认不弹通知
@@ -136,14 +143,14 @@ start-monitor.cmd
 编辑 `config.json`：
 
 - `pollMinutes`：检查间隔，当前默认10分钟，最低2分钟。
-- `maxPriceYen`：最高提醒价格，默认¥95,000。
+- `maxPriceYen`：最高提醒价格，当前为¥70,000；¥70,001～¥99,999只显示、不提醒。
 - `maxResultPriceYen`：结果列表最高价格，当前¥99,999；¥100,000及以上商品会自动剔除。
 - `minScore`：最低提醒评分，默认58；提高到65会更严格。
 - `minIntelGeneration`：Intel最低世代，当前为12。
 - `intelOnly`：当前为`true`，只接受Intel第12代以上及Core Ultra，不接受Ryzen/AMD。
 - `minRyzenSeries`：仅当把`intelOnly`改为`false`时生效。
 - `maxConditionLevel`：允许的最高商品状态级别，当前为3；只接受第1～3级。
-- `allowedSeries`：最终结果允许的商务本系列ID；当前固定为上述五个系列。
+- `allowedSeries`：最终结果允许的商务本系列ID；当前固定为上述11类品质商务本。Latitude只允许5000/7000/9000系列；VersaPro只允许明确标注UltraLite或タイプVN/VG/VH/VM的高等级移动系列；LIFEBOOK和ExpertBook分别只允许U7412和B9。
 - `excludeKeywords`：在メルカリ搜索阶段直接排除的关键词。
 - `detailCheckLimit`：每轮最多打开的新增商品详情数。
 - `metadataRefreshLimit`：正常监测时每轮补查的旧记录数，默认5、最高10。

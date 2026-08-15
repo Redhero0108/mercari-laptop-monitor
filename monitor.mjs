@@ -13,6 +13,7 @@ import {
 import { parseLikeCount } from './likes.mjs';
 import { renderResultsPage } from './results-page.mjs';
 import { assessCandidate, detectCpu, parsePrice } from './scoring.mjs';
+import { restoreNewlyAllowedSeriesSkips } from './state-migrations.mjs';
 import { extractPublishedAtFromPhotoUrls } from './time.mjs';
 
 const require = createRequire(import.meta.url);
@@ -44,7 +45,7 @@ const persistentMonitor = !once;
 
 const defaults = {
   pollMinutes: 10,
-  maxPriceYen: 95000,
+  maxPriceYen: 70000,
   maxResultPriceYen: 99999,
   minScore: 58,
   minIntelGeneration: 12,
@@ -65,6 +66,12 @@ const defaults = {
     'Dell Precision 32GB',
     'レッツノート 32GB',
     'dynabook G83 32GB',
+    'LIFEBOOK U7412 32GB',
+    'NEC VersaPro 32GB',
+    'ExpertBook B9 32GB',
+    'VAIO Pro 32GB',
+    'Dell Latitude 32GB',
+    'HP EliteBook 32GB',
   ],
 };
 
@@ -228,7 +235,7 @@ function isAllowedResultCpu(entry) {
 }
 
 const HARD_FILTER_MESSAGES = {
-  series: '不在指定五个商务系列中',
+  series: '不在指定品质商务系列中',
   memory: '内存不是32GB或无法确认',
   storage: '存储不足512GB或无法确认',
   ssd: '无法确认是SSD',
@@ -811,6 +818,11 @@ process.on('SIGTERM', async () => {
 });
 
 await claimMonitorPid();
+const restoredSeriesSkips = restoreNewlyAllowedSeriesSkips(state, config.allowedSeries);
+if (restoredSeriesSkips.length) {
+  await saveState();
+  await log(`已恢复 ${restoredSeriesSkips.length} 件因旧系列规则跳过的商品，等待重新检查。`);
+}
 await setMonitorPhase('正在启动', '正在准备结果页');
 await syncResultsPage();
 const startupMessage = pruneInactive

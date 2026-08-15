@@ -41,7 +41,7 @@ export function primaryBlocker(entry, config = {}) {
   }
   if (reasons.includes('未确认SSD')) return '未确认SSD';
   if (!Number.isFinite(entry?.price)) return '价格不明';
-  const maxPriceYen = Number(config.maxPriceYen ?? 95000);
+  const maxPriceYen = Number(config.maxPriceYen ?? 70000);
   if (entry.price > maxPriceYen) {
     return `超预算 ¥${(entry.price - maxPriceYen).toLocaleString('ja-JP')}`;
   }

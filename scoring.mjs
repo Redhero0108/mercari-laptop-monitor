@@ -1,7 +1,7 @@
 import { conditionLevel } from './conditions.mjs';
 import { detectLaptopSeries, isAllowedLaptopSeries } from './laptop-filters.mjs';
 
-const BUSINESS_MODELS = /elitebook|probook|latitude|thinkpad|dynabook\s*g\d|lifebook\s*u|let'?s\s*note|vaio\s*pro/i;
+const BUSINESS_MODELS = /elitebook|probook|latitude|thinkpad|dynabook\s*g\d|lifebook\s*u|let'?s\s*note|vaio\s*pro|expertbook\s*b9/i;
 const SEVERE_DEFECTS = /ジャンク|junk|部品取り|起動不可|電源(?:が)?入らない|ssdなし|ストレージなし|画面割れ|液晶割れ|bios(?:ロック|パスワード)|パスワード不明/i;
 
 function hasSevereDefect(text) {
@@ -161,7 +161,7 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
     }
   }
 
-  if (BUSINESS_MODELS.test(text)) {
+  if (BUSINESS_MODELS.test(text) || series?.id === 'nec-versapro-premium') {
     score += 6;
     reasons.push('商务本系列');
   }
@@ -198,7 +198,7 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
   }
 
   const minScore = Number(config.minScore ?? 58);
-  const maxPriceYen = Number(config.maxPriceYen ?? 95000);
+  const maxPriceYen = Number(config.maxPriceYen ?? 70000);
   const shouldAlert = Boolean(
     has32GB
       && has512GB

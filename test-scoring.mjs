@@ -12,11 +12,26 @@ assert.equal(detectCpu('Ryzen 7 5700U').series, 5);
 const strong = assessCandidate({
   title: 'HP EliteBook 630 G10 第13世代 i5-1335U 32GB SSD1TB Windows11 Pro',
   detail: '13.3インチ FHD バッテリー未消耗',
-  price: 85800,
+  price: 70000,
   itemCondition: '目立った傷や汚れなし',
 });
 assert.equal(strong.shouldAlert, true);
 assert.ok(strong.score >= 58);
+
+const priceBoundaryTitle = 'HP EliteBook 840 G10 第13世代 i5-1335U 32GB SSD1TB Windows11 Pro';
+const alertAtPriceCeiling = assessCandidate({
+  title: priceBoundaryTitle,
+  detail: '14インチ FHD バッテリー良好',
+  price: 70000,
+  itemCondition: '目立った傷や汚れなし',
+});
+assert.equal(alertAtPriceCeiling.shouldAlert, true);
+assert.equal(assessCandidate({
+  title: priceBoundaryTitle,
+  detail: '14インチ FHD バッテリー良好',
+  price: 70001,
+  itemCondition: '目立った傷や汚れなし',
+}).shouldAlert, false);
 assert.equal(assessCandidate({
   title: 'HP EliteBook 630 G10 第13世代 i5-1335U 32GB SSD1TB Windows11 Pro',
   detail: '13.3インチ FHD',
@@ -99,7 +114,7 @@ assert.equal(junk.shouldAlert, false);
 const ssd512 = assessCandidate({
   title: 'HP EliteBook 第13世代 Core i5-1335U 32GB SSD512GB Windows11 Pro',
   detail: 'FHD バッテリー良好',
-  price: 76800,
+  price: 70000,
   itemCondition: '新品、未使用',
 });
 assert.equal(ssd512.has512GB, true);
@@ -127,7 +142,7 @@ assert.equal(conditionLevel4.shouldAlert, false);
 
 const unknownCondition = assessCandidate({
   title: 'HP EliteBook 第13世代 Core i5-1335U 32GB SSD1TB Windows11 Pro',
-  price: 76800,
+  price: 70000,
 });
 assert.equal(unknownCondition.conditionEligible, false);
 assert.equal(unknownCondition.shouldAlert, false);
@@ -138,6 +153,12 @@ const allowedSeries = [
   'dell-precision',
   'panasonic-lets-note',
   'dynabook-g83',
+  'fujitsu-lifebook-u7412',
+  'nec-versapro-premium',
+  'asus-expertbook-b9',
+  'vaio-pro',
+  'dell-latitude-premium',
+  'hp-elitebook',
 ];
 const targetSeriesCases = [
   ['ThinkPad X1 Carbon Gen 10 Core i5-1240P 32GB NVMe 512GB', 'thinkpad-x1-carbon'],
@@ -145,6 +166,12 @@ const targetSeriesCases = [
   ['Dell Precision 5570 Core i7-12700H 32GB NVMe 1TB', 'dell-precision'],
   ['Panasonic レッツノート CF-SV2 Core i5-1245U 32GB SSD 512GB', 'panasonic-lets-note'],
   ['dynabook G83/HU Core i5-1240P 32GB SSD 512GB', 'dynabook-g83'],
+  ['Fujitsu LIFEBOOK U7412/K Core i5-1240P 32GB SSD 512GB', 'fujitsu-lifebook-u7412'],
+  ['NEC VersaPro UltraLite タイプVN Core i5-1335U 32GB SSD 512GB', 'nec-versapro-premium'],
+  ['ASUS ExpertBook B9400 Core i5-1240P 32GB SSD 512GB', 'asus-expertbook-b9'],
+  ['VAIO Pro PJ Core i5-1235U 32GB SSD 512GB', 'vaio-pro'],
+  ['Dell Latitude 5350 Core Ultra 5 32GB SSD 512GB', 'dell-latitude-premium'],
+  ['HP EliteBook 840 G9 Core i5-1235U 32GB SSD 512GB', 'hp-elitebook'],
 ];
 for (const [title, expectedSeriesId] of targetSeriesCases) {
   const assessment = assessCandidate({
@@ -157,13 +184,33 @@ for (const [title, expectedSeriesId] of targetSeriesCases) {
   assert.equal(assessment.shouldAlert, true, title);
 }
 
-const restrictedEliteBook = assessCandidate({
-  title: 'HP EliteBook 630 G10 Core i5-1335U 32GB SSD 1TB',
+const restrictedLatitude = assessCandidate({
+  title: 'Dell Latitude 3420 Core i5-1235U 32GB SSD 1TB',
   price: 60000,
   itemCondition: '目立った傷や汚れなし',
 }, { minIntelGeneration: 12, intelOnly: true, allowedSeries });
-assert.equal(restrictedEliteBook.series, null);
-assert.equal(restrictedEliteBook.seriesEligible, false);
-assert.equal(restrictedEliteBook.shouldAlert, false);
+assert.equal(restrictedLatitude.series, null);
+assert.equal(restrictedLatitude.seriesEligible, false);
+assert.equal(restrictedLatitude.shouldAlert, false);
+
+for (const title of [
+  'NEC VersaPro UltraLite タイプVN Core i5-1335U 32GB SSD 512GB',
+  'ASUS ExpertBook B9400 Core i5-1240P 32GB SSD 512GB',
+]) {
+  const assessment = assessCandidate({
+    title,
+    price: 60000,
+    itemCondition: '目立った傷や汚れなし',
+  }, { minIntelGeneration: 12, intelOnly: true, allowedSeries });
+  assert.ok(assessment.reasons.includes('商务本系列'), title);
+}
+
+const genericVersaPro = assessCandidate({
+  title: 'NEC VersaPro VKM44/X-C Core i5-1235U 32GB SSD 512GB',
+  price: 60000,
+  itemCondition: '目立った傷や汚れなし',
+}, { minIntelGeneration: 12, intelOnly: true, allowedSeries });
+assert.equal(genericVersaPro.seriesEligible, false);
+assert.equal(genericVersaPro.reasons.includes('商务本系列'), false);
 
 console.log('scoring tests: OK');

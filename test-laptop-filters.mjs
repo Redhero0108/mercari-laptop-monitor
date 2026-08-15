@@ -11,13 +11,29 @@ const seriesCases = [
   ['レッツノート CF-FV3', 'panasonic-lets-note'],
   ['CF-SV2 Core i5', 'panasonic-lets-note'],
   ['dynabook G83/HU', 'dynabook-g83'],
+  ['富士通 LIFEBOOK U7412/K Core i5', 'fujitsu-lifebook-u7412'],
+  ['NEC VersaPro UltraLite タイプVN Core i5', 'nec-versapro-premium'],
+  ['ASUS ExpertBook B9400 Core i7', 'asus-expertbook-b9'],
+  ['VAIO Pro PJ VJPJ23 Core i7', 'vaio-pro'],
+  ['Dell Latitude 5350 Core Ultra 5', 'dell-latitude-premium'],
+  ['Dell Latitude 7450 Core Ultra 7', 'dell-latitude-premium'],
+  ['Dell Latitude 9450 Core Ultra 7', 'dell-latitude-premium'],
+  ['HP EliteBook 840 G9 Core i5', 'hp-elitebook'],
 ];
 for (const [title, expectedId] of seriesCases) {
   assert.equal(filters.detectLaptopSeries(title)?.id, expectedId, title);
   assert.equal(filters.isAllowedLaptopSeries(title, allowedSeries), true, title);
 }
-assert.equal(filters.detectLaptopSeries('HP EliteBook 840 G9'), null);
-assert.equal(filters.isAllowedLaptopSeries('Dell Latitude 5430', allowedSeries), false);
+for (const title of [
+  'Fujitsu LIFEBOOK U9312 Core i5',
+  'NEC VersaPro VKM44/X-C Core i5',
+  'ASUS ExpertBook B5 Core i5',
+  'VAIO SX12 Core i5',
+  'Dell Latitude 3420 Core i5',
+]) {
+  assert.equal(filters.detectLaptopSeries(title), null, title);
+  assert.equal(filters.isAllowedLaptopSeries(title, allowedSeries), false, title);
+}
 
 const eligibleAssessment = {
   seriesEligible: true,
@@ -46,7 +62,7 @@ assert.equal(filters.resultMatchesHardFilters?.({
   has32GB: true,
   has512GB: true,
   hasSSD: true,
-}, allowedSeries), false);
+}, allowedSeries), true);
 assert.equal(filters.resultMatchesHardFilters?.({
   title: 'Dell Precision 5570 32GB 512GB',
   reasons: ['32GB内存', '512GB存储', '未确认SSD'],
