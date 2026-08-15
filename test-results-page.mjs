@@ -138,6 +138,11 @@ const rendered = renderResultsPage(renderEntries, {
   likesRefreshMinutes: 10,
 }, { nowMs: Date.parse('2026-08-12T04:00:00.000Z') });
 
+assert.match(rendered, /<meta http-equiv="refresh" content="600">/);
+assert.match(rendered, /页面每10分钟刷新/);
+assert.match(rendered, /refreshMonitorStatus\(\);/);
+assert.match(rendered, /ageMs > 900_000/);
+assert.doesNotMatch(rendered, /setInterval\(refreshMonitorStatus/);
 assert.match(rendered, /type="search"/);
 assert.match(rendered, /aria-label="搜索商品"/);
 assert.match(rendered, /id="result-count"/);

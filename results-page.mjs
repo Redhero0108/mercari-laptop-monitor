@@ -126,7 +126,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="refresh" content="300">
+  <meta http-equiv="refresh" content="600">
   <title>メルカリ笔记本监测结果</title>
   <style>
     :root { color-scheme: light; font-family: Inter, "Segoe UI", "Microsoft YaHei", "Yu Gothic UI", sans-serif; }
@@ -221,7 +221,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     <div class="brand-lockup"><span class="brand-mark">M</span><div><p class="eyebrow">MERCARI LAPTOP MONITOR</p><h1>メルカリ笔记本监测结果</h1></div></div>
     <div class="header-meta">
       <div id="monitor-status" class="monitor-status" title="未运行时请双击 open-results.cmd"><span class="monitor-status-dot" aria-hidden="true"></span><span id="monitor-status-text">正在检测后台状态…</span></div>
-      <p class="hint">搜索或点击栏目排序 · 页面每5分钟刷新 · いいね每${escapeHtml(config.likesRefreshMinutes ?? 10)}分钟后台更新</p>
+      <p class="hint">搜索或点击栏目排序 · 页面每10分钟刷新 · 后台每${escapeHtml(config.pollMinutes ?? 10)}分钟检查</p>
     </div>
   </header>
   <section class="summary-grid" aria-label="监测概览">
@@ -289,7 +289,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
         ? new Date(heartbeatMs).toLocaleTimeString('zh-CN', { hour12: false })
         : '';
       monitorStatus.classList.remove('is-online', 'is-busy', 'is-offline');
-      if (!status || status.running !== true || ageMs > 70_000) {
+      if (!status || status.running !== true || ageMs > 900_000) {
         monitorStatus.classList.add('is-offline');
         monitorStatusText.textContent = heartbeatText
           ? '后台未运行 · 最后心跳 ' + heartbeatText
@@ -398,7 +398,6 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     currentFilter = ['all', 'match', 'top', 'new'].includes(currentFilter) ? currentFilter : 'all';
     applyVisibility();
     refreshMonitorStatus();
-    setInterval(refreshMonitorStatus, 10_000);
   })();
 </script>
 </body></html>\n`;

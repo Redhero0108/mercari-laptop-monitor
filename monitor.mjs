@@ -43,7 +43,7 @@ const showBrowser = args.has('--show-browser');
 const persistentMonitor = !once;
 
 const defaults = {
-  pollMinutes: 5,
+  pollMinutes: 10,
   maxPriceYen: 95000,
   maxResultPriceYen: 99999,
   minScore: 58,
@@ -69,7 +69,7 @@ const defaults = {
 };
 
 const config = { ...defaults, ...JSON.parse(await readFile(CONFIG_FILE, 'utf8')) };
-config.pollMinutes = Math.max(2, Number(config.pollMinutes) || 5);
+config.pollMinutes = Math.max(2, Number(config.pollMinutes) || 10);
 config.detailCheckLimit = Math.max(1, Math.min(30, Number(config.detailCheckLimit) || 15));
 config.metadataRefreshLimit = Math.max(0, Math.min(10, Number(config.metadataRefreshLimit) || 0));
 config.likesRefreshMinutes = Math.max(5, Number(config.likesRefreshMinutes) || 10);
@@ -94,7 +94,6 @@ let results = await loadResults();
 let browser;
 let nextSearchAt = 0;
 let nextLikesRefreshAt = 0;
-let heartbeatTimer;
 let monitorPhase = '正在启动';
 let monitorMessage = '正在连接浏览器';
 let statusWriteQueue = Promise.resolve();
@@ -176,17 +175,7 @@ async function setMonitorPhase(phase, message = '') {
   await writeMonitorStatus().catch(() => {});
 }
 
-function startHeartbeat() {
-  if (!persistentMonitor || heartbeatTimer) return;
-  heartbeatTimer = setInterval(() => {
-    writeMonitorStatus().catch(() => {});
-  }, 20_000);
-  heartbeatTimer.unref();
-}
-
 async function stopHeartbeat() {
-  if (heartbeatTimer) clearInterval(heartbeatTimer);
-  heartbeatTimer = undefined;
   await writeMonitorStatus(false, '已停止', '请双击 open-results.cmd 启动后台监测');
 }
 
@@ -822,7 +811,6 @@ process.on('SIGTERM', async () => {
 });
 
 await claimMonitorPid();
-startHeartbeat();
 await setMonitorPhase('正在启动', '正在准备结果页');
 await syncResultsPage();
 const startupMessage = pruneInactive

@@ -1,5 +1,5 @@
 {
-  "pollMinutes": 5,
+  "pollMinutes": 10,
   "maxPriceYen": 95000,
   "maxResultPriceYen": 99999,
   "minScore": 58,
