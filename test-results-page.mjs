@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import {
+import * as resultsPage from './results-page.mjs';
+
+const {
   compactCondition,
   matchesResultRow,
   primaryBlocker,
   renderResultsPage,
   searchText,
-} from './results-page.mjs';
+} = resultsPage;
 
 const goodReasons = ['商品状态第3级', '32GB内存', '512GB存储', 'Intel 第13代', '价格合理'];
 const baseEntry = {
@@ -33,6 +35,59 @@ assert.deepEqual(
   compactCondition(baseEntry),
   { label: '3｜无明显伤污', title: '3｜目立った傷や汚れなし' },
   '商品状态3应显示紧凑中文，同时保留完整原文',
+);
+
+assert.equal(typeof resultsPage.memorySpecConflict, 'function', '结果页应提供标题内存规格矛盾检测');
+assert.equal(typeof resultsPage.isDisplayQualified, 'function', '结果页应提供前端展示资格判断');
+const { memorySpecConflict, isDisplayQualified } = resultsPage;
+assert.deepEqual(
+  memorySpecConflict({ title: 'HP EliteBook 16GB 1TB', reasons: ['32GB内存'] }),
+  { conflict: true, label: '标题16GB / 检测32GB · 需要人工确认' },
+  '标题明确写16GB但检测为32GB时应要求人工确认',
+);
+assert.deepEqual(
+  memorySpecConflict({ title: 'HP EliteBook 16GB×2 1TB', reasons: ['32GB内存'] }),
+  { conflict: false, label: '' },
+  '标题明确为16GB双通道时不应误报规格矛盾',
+);
+assert.equal(
+  isDisplayQualified({ ...baseEntry, title: 'HP EliteBook 16GB 1TB', shouldAlert: true, conditionEligible: true }),
+  false,
+  '规格矛盾商品不得显示为符合提醒',
+);
+assert.equal(
+  isDisplayQualified({ ...baseEntry, shouldAlert: true, conditionEligible: true }),
+  true,
+  '没有规格矛盾的后台合格商品应保持符合提醒',
+);
+const conflictingDangerEntry = {
+  ...baseEntry,
+  title: 'HP EliteBook 16GB 1TB 严重故障',
+  shouldAlert: true,
+  conditionEligible: true,
+  reasons: [...goodReasons, '严重故障/锁机风险'],
+};
+assert.equal(
+  primaryBlocker(conflictingDangerEntry, { maxPriceYen: 95000 }),
+  '严重故障/锁机风险',
+  '安全风险必须优先于标题规格矛盾',
+);
+assert.equal(
+  isDisplayQualified(conflictingDangerEntry),
+  false,
+  '即使持久化提醒状态异常，安全风险商品也不得进入前端合格结果',
+);
+assert.equal(typeof resultsPage.formatJstShort, 'function', '结果页应提供统一的JST短时间格式');
+const { formatJstShort } = resultsPage;
+assert.deepEqual(
+  formatJstShort('2026-08-12T03:00:00.000Z'),
+  { short: '08-12 12:00', full: '2026/08/12 12:00' },
+  '可见时间应简短，并保留完整JST时间供提示使用',
+);
+assert.deepEqual(
+  formatJstShort('invalid'),
+  { short: '时间不明', full: '时间不明' },
+  '无效时间应使用明确占位文案',
 );
 
 const searchable = searchText({
@@ -101,6 +156,16 @@ assert.equal(
   false,
   '多个搜索词必须全部命中',
 );
+assert.equal(
+  matchesResultRow({ budget: '1', match: '0', grade: '2', new: '0', search: 'HP' }, 'budget', ''),
+  true,
+  '预算内筛选应显示价格不超过提醒线的商品',
+);
+assert.equal(
+  matchesResultRow({ budget: '0', match: '1', grade: '4', new: '1', search: 'HP' }, 'budget', ''),
+  false,
+  '预算内筛选应隐藏超出提醒线的商品',
+);
 
 const renderEntries = [
   {
@@ -135,6 +200,24 @@ const renderEntries = [
     publishedAt: '2026-08-12T02:00:00.000Z',
     checkedAt: '2026-08-12T03:00:00.000Z',
   },
+  {
+    ...baseEntry,
+    id: 'm3',
+    title: 'HP EliteBook 830 G10 16GB 1TB',
+    url: 'https://jp.mercari.com/item/m3',
+    price: 60000,
+    score: 90,
+    grade: 'A',
+    shouldAlert: true,
+    conditionEligible: true,
+    reasons: ['商品状态第2级', '32GB内存', '1TB存储', 'Intel 第13代'],
+    itemConditionLevel: 2,
+    itemCondition: '未使用に近い',
+    likeCount: 3,
+    likeCheckedAt: '2026-08-12T03:00:00.000Z',
+    publishedAt: '2026-08-12T02:30:00.000Z',
+    checkedAt: '2026-08-12T03:00:00.000Z',
+  },
 ];
 const rendered = renderResultsPage(renderEntries, {
   maxPriceYen: 95000,
@@ -151,24 +234,42 @@ assert.match(rendered, /type="search"/);
 assert.match(rendered, /aria-label="搜索商品"/);
 assert.match(rendered, /id="result-count"/);
 assert.match(rendered, /mercari-laptop-monitor-search/);
+assert.match(rendered, /<title>Mercari 笔记本监测结果<\/title>/);
+assert.match(rendered, /class="summary-strip"/);
+assert.doesNotMatch(rendered, /summary-card/);
+assert.match(rendered, /data-filter="budget"[^>]*>[\s\S]*?预算内 ≤ ¥95,000[\s\S]*?>2</);
+assert.match(rendered, /class="best-candidate"/);
+assert.match(rendered, /当前最佳候选/);
+assert.match(rendered, /class="best-title"[^>]*>ThinkPad X1 Carbon 32GB 1TB/);
+assert.doesNotMatch(rendered, /BEST SIGNAL/);
+assert.match(rendered, /收藏数（いいね）/);
 const sortKeys = [...rendered.matchAll(/data-sort="([^"]+)"/g)].map((match) => match[1]);
-assert.deepEqual(sortKeys, ['grade', 'price', 'likes', 'condition', 'title', 'published', 'time']);
-assert.doesNotMatch(rendered, /<th[^>]*>\s*判断/);
+assert.deepEqual(sortKeys, ['grade', 'price', 'decision', 'likes', 'condition', 'title', 'published', 'time']);
+assert.match(rendered, /<th[^>]*>[\s\S]*?data-sort="decision"[^>]*>判断/);
 assert.doesNotMatch(rendered, /<th[^>]*>\s*链接/);
-assert.doesNotMatch(rendered, /class="status-cell"/);
 assert.doesNotMatch(rendered, /class="action-cell"/);
 assert.match(rendered, /class="condition-cell" title="3｜目立った傷や汚れなし">3｜无明显伤污/);
 assert.match(rendered, /class="title"[^>]*>HP EliteBook 830 G10 32GB 512GB<span class="external-mark"/);
-assert.match(rendered, /class="decision decision-blocked">超预算 ¥5,000/);
-assert.match(rendered, /class="decision decision-match">符合提醒/);
+assert.match(rendered, /class="price-detail is-over">\+¥5,000/);
+assert.match(rendered, /class="decision-cell"><span class="decision decision-blocked">超预算 ¥5,000/);
+assert.match(rendered, /class="decision-cell"><span class="decision decision-match">符合提醒/);
+assert.match(rendered, /class="decision-cell"><span class="decision decision-warning">标题16GB \/ 检测32GB · 需要人工确认/);
+assert.match(rendered, /data-title="HP EliteBook 830 G10 16GB 1TB" data-match="0" data-budget="1"/);
 assert.match(rendered, /data-search="[^"]*HP EliteBook[^"]*Intel 第13代[^"]*超预算 ¥5,000/);
+assert.match(rendered, /class="date-cell" title="2026\/08\/12 10:30 JST">08-12 10:30/);
+assert.match(rendered, /收藏数最后更新：2026\/08\/12 12:00 JST/);
+assert.match(rendered, /后台正常｜上次检查/);
+assert.match(rendered, /｜下次约/);
+assert.match(rendered, /@media \(max-width: 920px\)/);
+assert.doesNotMatch(rendered, /status-pulse/);
+assert.doesNotMatch(rendered, /font-size: (?:8|9|10|11)px/);
 
 const inlineScript = rendered.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1];
 assert.ok(inlineScript, '结果页应包含交互脚本');
 assert.doesNotThrow(() => new Function(inlineScript), '结果页交互脚本必须是有效JavaScript');
 
 const emptyRendered = renderResultsPage([], { likesRefreshMinutes: 10 }, { nowMs: Date.now() });
-assert.match(emptyRendered, /colspan="7"/);
+assert.match(emptyRendered, /colspan="8"/);
 assert.match(emptyRendered, /没有符合当前筛选和搜索的商品/);
 
 const escapedRendered = renderResultsPage([
