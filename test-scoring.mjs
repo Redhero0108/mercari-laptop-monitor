@@ -128,6 +128,22 @@ const ssd512 = assessCandidate({
 assert.equal(ssd512.has512GB, true);
 assert.equal(ssd512.has1TB, false);
 assert.equal(ssd512.hasSSD, true);
+
+const replaceable256 = assessCandidate({
+  title: 'ThinkPad T14 第12世代 Core i5 32GB SSD256GB 可更换 支持扩容至2TB Windows11',
+  price: 55000,
+  itemCondition: '目立った傷や汚れなし',
+}, { minIntelGeneration: 12, intelOnly: true });
+assert.equal(replaceable256.has512GB, true);
+assert.equal(replaceable256.shouldAlert, true);
+
+const fixed256 = assessCandidate({
+  title: 'ThinkPad T14 第12世代 Core i5 32GB SSD256GB Windows11',
+  price: 55000,
+  itemCondition: '目立った傷や汚れなし',
+}, { minIntelGeneration: 12, intelOnly: true });
+assert.equal(fixed256.has512GB, false);
+assert.equal(fixed256.shouldAlert, false);
 assert.equal(ssd512.shouldAlert, true);
 
 const hdd512 = assessCandidate({

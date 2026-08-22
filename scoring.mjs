@@ -23,6 +23,13 @@ function compact(text) {
     .trim();
 }
 
+function hasUpgradeable256GBStorage(text) {
+  const has256GB = /256\s*(?:gb|g)\b/i.test(text);
+  const hasUpgradeLanguage = /可更换|可替换|可升级|支持扩容|扩容|換装|交換可能|増設可能|upgradeable|replaceable|expandable/i.test(text);
+  const supportsAtLeast1TB = /(?:1\s*tb|1000\s*gb|1024\s*gb|[2-9]\s*tb)\b|1\s*tb以上|1t以上/i.test(text);
+  return has256GB && hasUpgradeLanguage && supportsAtLeast1TB;
+}
+
 export function parsePrice(text) {
   const match = compact(text).match(/[¥￥]\s*([\d,]+)/);
   return match ? Number(match[1].replaceAll(',', '')) : null;
@@ -107,7 +114,7 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
 
   const has32GB = /(?:メモリ|memory|ram)?\s*32\s*(?:gb|g)\b/i.test(text);
   const has1TB = /(?:1\s*tb|1000\s*gb|1024\s*gb)\b/i.test(text);
-  const has512GB = has1TB || /512\s*(?:gb|g)\b/i.test(text);
+  const has512GB = has1TB || /512\s*(?:gb|g)\b/i.test(text) || hasUpgradeable256GBStorage(text);
   const hasSSD = /ssd|nvme|m\.2/i.test(text);
   const hasWindows11 = /windows\s*11|win\s*11/i.test(text);
   const excludedPlatform = /macbook|chromebook|chrome\s*os|iMac/i.test(text);
@@ -137,7 +144,7 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
     reasons.push('1TB存储');
   } else if (has512GB) {
     score += 10;
-    reasons.push('512GB存储');
+    reasons.push(hasUpgradeable256GBStorage(text) ? '256GB但明确可升级至1TB以上' : '512GB存储');
   } else {
     score -= 30;
   }
