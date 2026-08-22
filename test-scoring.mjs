@@ -89,13 +89,21 @@ const twelfthGen = assessCandidate({
 assert.equal(twelfthGen.cpu.generation, 12);
 assert.equal(twelfthGen.shouldAlert, true);
 
-const ryzenExcluded = assessCandidate({
+const ryzenIncluded = assessCandidate({
   title: 'Ryzen 7 7840U 32GB SSD 1TB Windows11',
   price: 65000,
   itemCondition: '目立った傷や汚れなし',
-}, { minIntelGeneration: 12, minRyzenSeries: 5, intelOnly: true });
-assert.equal(ryzenExcluded.cpu.eligible, false);
-assert.equal(ryzenExcluded.shouldAlert, false);
+}, { minIntelGeneration: 12, minRyzenSeries: 6, intelOnly: false });
+assert.equal(ryzenIncluded.cpu.eligible, true);
+assert.equal(ryzenIncluded.shouldAlert, true);
+
+const oldRyzenExcluded = assessCandidate({
+  title: 'Ryzen 7 5700U 32GB SSD 1TB Windows11',
+  price: 65000,
+  itemCondition: '目立った傷や汚れなし',
+}, { minIntelGeneration: 12, minRyzenSeries: 6, intelOnly: false });
+assert.equal(oldRyzenExcluded.cpu.eligible, false);
+assert.equal(oldRyzenExcluded.shouldAlert, false);
 
 const coreUltra = assessCandidate({
   title: 'Intel Core Ultra 7 155H 32GB SSD 1TB Windows11',

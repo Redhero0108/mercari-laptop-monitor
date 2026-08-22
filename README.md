@@ -5,7 +5,7 @@
 - 编程＋云端AI
 - 32GB内存
 - 512GB以上SSD（1TB额外加分）
-- Intel第12代以上（同时接受更新的Core Ultra；不接受Ryzen/AMD）
+- Intel第12代以上（同时接受更新的Core Ultra）；同时接受性能相当于Intel第12代以上的Ryzen 6000系列及更新型号
 - 系列只接受11类品质商务本：ThinkPad X1 Carbon、HP ProBook、Dell Precision、Panasonic Let's note、Dynabook G83、LIFEBOOK U7412、品质型NEC VersaPro、ExpertBook B9、VAIO Pro、Latitude 5000/7000/9000、HP EliteBook
 - 价格不超过¥70,000且满足其他条件时才提醒；¥70,001～¥99,999只保留在结果页供参考
 - 价格达到¥100,000的商品不进入结果列表（最高保留¥99,999）
@@ -147,8 +147,8 @@ start-monitor.cmd
 - `maxResultPriceYen`：结果列表最高价格，当前¥99,999；¥100,000及以上商品会自动剔除。
 - `minScore`：最低提醒评分，默认58；提高到65会更严格。
 - `minIntelGeneration`：Intel最低世代，当前为12。
-- `intelOnly`：当前为`true`，只接受Intel第12代以上及Core Ultra，不接受Ryzen/AMD。
-- `minRyzenSeries`：仅当把`intelOnly`改为`false`时生效。
+- `intelOnly`：当前为`false`，接受Intel第12代以上、Core Ultra，以及达到门槛的Ryzen/AMD。
+- `minRyzenSeries`：当前为`6`，即Ryzen 6000系列及以上；仅识别到Ryzen 5000及以下的商品不放行。
 - `maxConditionLevel`：允许的最高商品状态级别，当前为3；只接受第1～3级。
 - `allowedSeries`：最终结果允许的商务本系列ID；当前固定为上述11类品质商务本。Latitude只允许5000/7000/9000系列；VersaPro只允许明确标注UltraLite或タイプVN/VG/VH/VM的高等级移动系列；LIFEBOOK和ExpertBook分别只允许U7412和B9。
 - `excludeKeywords`：在メルカリ搜索阶段直接排除的关键词。
