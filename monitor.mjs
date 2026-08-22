@@ -1,24 +1,18 @@
-import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { appendFile, open, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { detectListingAvailability } from './availability.mjs';
 import {
   DEFAULT_ALLOWED_SERIES,
   hardFilterFailure,
   resultMatchesHardFilters,
 } from './laptop-filters.mjs';
-import { parseLikeCount } from './likes.mjs';
+import { launchBrowser, readDetail, readSearch } from './mercari-adapter.mjs';
 import { compareRecommendedEntries, renderResultsPage } from './results-page.mjs';
-import { mergeResultHistory } from './result-history.mjs';
-import { assessCandidate, detectCpu, parsePrice } from './scoring.mjs';
+import { evaluatePriceDrop, mergeResultHistory } from './result-history.mjs';
+import { assessCandidate, detectCpu } from './scoring.mjs';
 import { restoreNewlyAllowedSeriesSkips } from './state-migrations.mjs';
-import { extractPublishedAtFromPhotoUrls } from './time.mjs';
-
-const require = createRequire(import.meta.url);
-const { chromium } = require('playwright');
 
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = path.join(APP_DIR, 'config.json');
@@ -30,8 +24,6 @@ const RESULTS_HTML_FILE = path.join(APP_DIR, 'results.html');
 const RESULTS_LOCK_FILE = path.join(APP_DIR, '.results.lock');
 const PID_FILE = path.join(APP_DIR, 'monitor.pid');
 const STATUS_SCRIPT_FILE = path.join(APP_DIR, 'monitor-status.js');
-const SEARCH_BASE = 'https://jp.mercari.com/search';
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150 Safari/537.36';
 
 const args = new Set(process.argv.slice(2));
 const diagnose = args.has('--diagnose');
@@ -57,6 +49,7 @@ const defaults = {
   metadataRefreshLimit: 5,
   likesRefreshMinutes: 10,
   likesRefreshConcurrency: 3,
+  searchConcurrency: 3,
   headless: true,
   notify: true,
   allowedSeries: [...DEFAULT_ALLOWED_SERIES],
@@ -74,14 +67,28 @@ const defaults = {
     'Dell Latitude 32GB',
     'HP EliteBook 32GB',
   ],
+  wideQueries: [
+    'X1 Carbon',
+    'HP ProBook',
+    'Dell Precision',
+    'レッツノート',
+    'dynabook G83',
+    'LIFEBOOK U7412',
+    'NEC VersaPro',
+    'ExpertBook B9',
+    'VAIO Pro',
+    'Dell Latitude',
+    'HP EliteBook',
+  ],
 };
 
 const config = { ...defaults, ...JSON.parse(await readFile(CONFIG_FILE, 'utf8')) };
 config.pollMinutes = Math.max(2, Number(config.pollMinutes) || 10);
-config.detailCheckLimit = Math.max(1, Math.min(30, Number(config.detailCheckLimit) || 15));
+config.detailCheckLimit = Math.max(1, Math.min(80, Number(config.detailCheckLimit) || 15));
 config.metadataRefreshLimit = Math.max(0, Math.min(10, Number(config.metadataRefreshLimit) || 0));
 config.likesRefreshMinutes = Math.max(5, Number(config.likesRefreshMinutes) || 10);
 config.likesRefreshConcurrency = Math.max(1, Math.min(5, Number(config.likesRefreshConcurrency) || 3));
+config.searchConcurrency = Math.max(1, Math.min(5, Number(config.searchConcurrency) || 3));
 config.maxConditionLevel = Math.max(1, Math.min(6, Number(config.maxConditionLevel) || 3));
 config.minIntelGeneration = Math.max(7, Math.min(15, Number(config.minIntelGeneration) || 12));
 config.intelOnly = config.intelOnly !== false;
@@ -93,6 +100,9 @@ config.allowedSeries = Array.isArray(config.allowedSeries)
   ? config.allowedSeries.map(String).map((id) => id.trim()).filter(Boolean)
   : defaults.allowedSeries;
 config.queries = Array.isArray(config.queries) && config.queries.length ? config.queries : defaults.queries;
+config.wideQueries = Array.isArray(config.wideQueries)
+  ? config.wideQueries.map(String).map((query) => query.trim()).filter(Boolean)
+  : defaults.wideQueries;
 config.excludeKeywords = Array.isArray(config.excludeKeywords)
   ? config.excludeKeywords.map(String).map((word) => word.trim()).filter(Boolean)
   : defaults.excludeKeywords;
@@ -380,130 +390,6 @@ async function log(message) {
   await appendFile(LOG_FILE, `${line}\n`, 'utf8').catch(() => {});
 }
 
-function searchUrl(query) {
-  const url = new URL(SEARCH_BASE);
-  url.searchParams.set('keyword', query);
-  url.searchParams.set('status', 'on_sale');
-  url.searchParams.set('sort', 'created_time');
-  url.searchParams.set('order', 'desc');
-  url.searchParams.set(
-    'item_condition_id',
-    Array.from({ length: config.maxConditionLevel }, (_, index) => index + 1).join(','),
-  );
-  if (config.excludeKeywords.length) {
-    url.searchParams.set('exclude_keyword', config.excludeKeywords.join(' '));
-  }
-  return url.href;
-}
-
-async function launchBrowser() {
-  const headless = showBrowser ? false : Boolean(config.headless);
-  const common = { headless, locale: 'ja-JP', userAgent: USER_AGENT };
-  const attempts = [
-    ['Brave', { ...common, executablePath: 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe' }],
-    ['Google Chrome', { ...common, channel: 'chrome' }],
-    ['Microsoft Edge', { ...common, channel: 'msedge' }],
-    ['Playwright Chromium', common],
-  ];
-  const errors = [];
-  for (const [name, options] of attempts) {
-    try {
-      const instance = await chromium.launch(options);
-      await log(`浏览器已启动：${name}${headless ? '（后台）' : '（可见）'}`);
-      return instance;
-    } catch (error) {
-      errors.push(`${name}: ${error.message.split(/\r?\n/, 1)[0]}`);
-    }
-  }
-  throw new Error(`无法启动浏览器：${errors.join('；')}`);
-}
-
-async function readSearch(page, query) {
-  await page.goto(searchUrl(query), { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.waitForTimeout(2200);
-  const cards = await page.evaluate(() => Array.from(document.querySelectorAll('a[href*="/item/"]'))
-    .slice(0, 60)
-    .map((anchor) => ({
-      href: anchor.href,
-      text: (anchor.innerText || anchor.getAttribute('aria-label') || anchor.querySelector('img')?.alt || '').trim(),
-      alt: (anchor.querySelector('img')?.alt || '').trim(),
-    }))
-    .filter((item) => /\/item\/m\d+/.test(item.href) && item.text));
-
-  const unique = new Map();
-  for (const card of cards) {
-    const id = card.href.match(/\/item\/(m\d+)/)?.[1];
-    if (!id || unique.has(id)) continue;
-    const lines = card.text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const rawTitle = card.alt || lines
-      .filter((line) => !/^(?:¥|￥|\d+%OFF|現在|[\d,]+円?)$/.test(line))
-      .join(' ')
-      .trim() || card.text;
-    const title = rawTitle.replace(/のサムネイル$/, '').trim();
-    unique.set(id, {
-      id,
-      title,
-      price: parsePrice(card.text),
-      url: `https://jp.mercari.com/item/${id}`,
-      query,
-    });
-  }
-  return [...unique.values()];
-}
-
-async function readDetail(page, item) {
-  const response = await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  let pageData = { mainText: '', photoUrls: [], likeText: null, itemCondition: null, soldButtonText: null };
-  for (const delay of [1400, 2200, 3200]) {
-    await page.waitForTimeout(delay);
-    pageData = await page.evaluate(() => {
-      const conditionElement = document.querySelector('[data-testid="商品の状態"]');
-      const itemCondition = conditionElement
-        ? [...conditionElement.childNodes]
-          .filter((node) => node.nodeType === Node.TEXT_NODE)
-          .map((node) => node.textContent)
-          .join(' ')
-          .trim()
-        : null;
-      return {
-        mainText: document.querySelector('main')?.innerText || '',
-        photoUrls: [
-        document.querySelector('meta[property="og:image"]')?.content,
-        ...[...document.images].flatMap((image) => [
-          image.getAttribute('src'),
-          image.currentSrc,
-          ...(image.getAttribute('srcset') || '').split(',').map((part) => part.trim().split(/\s+/, 1)[0]),
-        ]),
-        ].filter(Boolean),
-        likeText: document.querySelector('[data-testid="icon-heart-button"] button')?.innerText?.trim() ?? null,
-        itemCondition,
-        soldButtonText: [...document.querySelectorAll('button')]
-          .find((button) => button.disabled && button.textContent?.trim() === '売り切れました')
-          ?.textContent?.trim() ?? null,
-      };
-    });
-    if (pageData.mainText.trim() && (pageData.likeText !== null || pageData.soldButtonText !== null)) break;
-  }
-  if (!pageData.mainText.trim()) throw new Error(`商品详情为空（页面：${page.url()}）`);
-  const availability = detectListingAvailability(
-    pageData.mainText,
-    response?.status() ?? null,
-    pageData.soldButtonText,
-  );
-  const ownListing = pageData.mainText.split('商品の情報')[0].slice(0, 12000);
-  return {
-    ...item,
-    detail: ownListing,
-    price: parsePrice(ownListing) ?? item.price,
-    likeCount: parseLikeCount(pageData.likeText),
-    itemCondition: pageData.itemCondition ?? item.itemCondition ?? null,
-    publishedAt: extractPublishedAtFromPhotoUrls(pageData.photoUrls, item.id),
-    sold: availability.sold,
-    removed: availability.removed,
-    unavailableReason: availability.reason,
-  };
-}
-
 function notificationBody(item, assessment) {
   const reasonText = assessment.reasons.slice(0, 5).join('、');
   return `${item.title}\n¥${assessment.price.toLocaleString('ja-JP')}　${assessment.grade}级\n${reasonText}\n\n是否打开商品页面？`;
@@ -527,6 +413,30 @@ function notify(item, assessment) {
 async function recordAlert(item, assessment) {
   const record = { alertedAt: new Date().toISOString(), ...item, assessment };
   await appendFile(ALERTS_FILE, `${JSON.stringify(record)}\n`, 'utf8');
+}
+
+async function maybeNotifyPriceDrop(item, previousPrice, assessment) {
+  if (noNotify || !config.notify) return false;
+  const seen = state.seen[item.id];
+  const drop = evaluatePriceDrop({
+    previousPrice,
+    currentPrice: assessment.price,
+    shouldAlert: assessment.shouldAlert,
+    maxPriceYen: config.maxPriceYen,
+    lastAlertedPrice: seen?.alertedAtPrice,
+  });
+  if (!drop) return false;
+  state.seen[item.id] = {
+    ...seen,
+    title: item.title,
+    alertedAtPrice: drop.currentPrice,
+    alertedAt: new Date().toISOString(),
+  };
+  await saveState();
+  notify(item, assessment);
+  await recordAlert(item, assessment);
+  await log(`  ↳ 降价提醒：¥${drop.previousPrice.toLocaleString('ja-JP')} → ¥${drop.currentPrice.toLocaleString('ja-JP')}；${item.title}`);
+  return true;
 }
 
 async function markMetadataFailure(item, error) {
@@ -616,7 +526,7 @@ async function refreshAllLiveResults() {
   }
 
   let cursor = 0;
-  const totals = { checked: 0, changed: 0, removed: 0, filtered: 0, failed: 0 };
+  const totals = { checked: 0, changed: 0, removed: 0, filtered: 0, failed: 0, priceDrops: 0 };
   const workerCount = Math.min(config.likesRefreshConcurrency, candidates.length);
   await log(`开始刷新 ${candidates.length} 件商品的价格、いいね和状态（${workerCount} 路并行）。`);
 
@@ -652,6 +562,9 @@ async function refreshAllLiveResults() {
             continue;
           }
           const change = await recordLiveResult(detailed, assessment);
+          if (await maybeNotifyPriceDrop(detailed, Number(entry.price), assessment)) {
+            totals.priceDrops += 1;
+          }
           if (!change?.hasLikeCount) totals.failed += 1;
           if (change?.hasLikeCount && change.previousLike !== change.currentLike) {
             totals.changed += 1;
@@ -668,27 +581,45 @@ async function refreshAllLiveResults() {
   }
 
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  await log(`实时资料刷新完成：检查 ${totals.checked} 件，いいね变化 ${totals.changed} 件，失效剔除 ${totals.removed} 件，筛选条件剔除 ${totals.filtered} 件，未取得 ${totals.failed} 件。`);
+  await log(`实时资料刷新完成：检查 ${totals.checked} 件，いいね变化 ${totals.changed} 件，失效剔除 ${totals.removed} 件，筛选条件剔除 ${totals.filtered} 件，未取得 ${totals.failed} 件，降价提醒 ${totals.priceDrops} 件。`);
   return totals;
 }
 
-async function scanOnce() {
-  const searchPage = await browser.newPage();
-  const itemsById = new Map();
-  const queryResults = [];
-  let successfulQueries = 0;
-
-  for (const query of config.queries) {
+async function searchQueries(queries, { limit = 60 } = {}) {
+  if (!queries.length) return [];
+  const results = [];
+  let cursor = 0;
+  const workerCount = Math.max(1, Math.min(config.searchConcurrency, queries.length));
+  async function worker() {
+    const page = await browser.newPage();
     try {
-      const items = await readSearch(searchPage, query);
-      successfulQueries += 1;
-      queryResults.push(items);
-      await log(`搜索“${query}”：读取 ${items.length} 件在售商品`);
-    } catch (error) {
-      await log(`搜索“${query}”失败：${error.message}`);
+      while (cursor < queries.length) {
+        const query = queries[cursor];
+        cursor += 1;
+        try {
+          const items = await readSearch(page, query, { limit });
+          results.push({ query, items, ok: true });
+          await log(`搜索“${query}”：读取 ${items.length} 件在售商品`);
+        } catch (error) {
+          results.push({ query, items: [], ok: false, error });
+          await log(`搜索“${query}”失败：${error.message}`);
+        }
+      }
+    } finally {
+      await page.close().catch(() => {});
     }
   }
-  await searchPage.close();
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+async function scanOnce() {
+  const itemsById = new Map();
+  const preciseResults = await searchQueries(config.queries, { limit: 60 });
+  const wideResults = await searchQueries(config.wideQueries, { limit: 100 });
+  const allQueryResults = [...preciseResults, ...wideResults];
+  const successfulQueries = allQueryResults.filter((result) => result.ok).length;
+  const queryResults = allQueryResults.map((result) => result.items);
 
   if (!successfulQueries) throw new Error('所有搜索均失败，本轮不更新状态');
   const longestResult = Math.max(0, ...queryResults.map((items) => items.length));
@@ -845,7 +776,7 @@ const startupMessage = pruneInactive
 await log(startupMessage);
 await log('可点击结果页：results.html（双击 open-results.cmd 打开）');
 try {
-  browser = await launchBrowser();
+  browser = await launchBrowser({ showBrowser, headless: config.headless, log });
   await setMonitorPhase('正在启动', '浏览器已连接，准备首次检查');
   do {
     try {

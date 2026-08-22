@@ -1,5 +1,24 @@
 const MAX_HISTORY_POINTS = 12;
 
+/**
+ * 判断是否应就降价发出提醒。仅在“价格确实下降、当前满足提醒条件、
+ * 且未针对该价格提醒过”时返回降价信息，否则返回 null。
+ */
+export function evaluatePriceDrop({
+  previousPrice,
+  currentPrice,
+  shouldAlert = false,
+  maxPriceYen = Number.POSITIVE_INFINITY,
+  lastAlertedPrice = null,
+}) {
+  if (!Number.isFinite(previousPrice) || !Number.isFinite(currentPrice)) return null;
+  if (currentPrice >= previousPrice) return null;
+  if (shouldAlert !== true) return null;
+  if (currentPrice > maxPriceYen) return null;
+  if (Number.isFinite(lastAlertedPrice) && lastAlertedPrice === currentPrice) return null;
+  return { previousPrice, currentPrice, delta: currentPrice - previousPrice };
+}
+
 function validTimestamp(value, fallback) {
   return Number.isFinite(Date.parse(value)) ? value : fallback;
 }

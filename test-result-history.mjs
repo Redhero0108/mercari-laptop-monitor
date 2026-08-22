@@ -2,7 +2,45 @@ import assert from 'node:assert/strict';
 
 const resultHistory = await import('./result-history.mjs').catch(() => ({}));
 assert.equal(typeof resultHistory.mergeResultHistory, 'function', '应提供结果历史合并函数');
-const { mergeResultHistory } = resultHistory;
+assert.equal(typeof resultHistory.evaluatePriceDrop, 'function', '应提供降价提醒判定函数');
+const { mergeResultHistory, evaluatePriceDrop } = resultHistory;
+
+// 降价提醒判定
+assert.deepEqual(
+  evaluatePriceDrop({ previousPrice: 70000, currentPrice: 65000, shouldAlert: true, maxPriceYen: 70000 }),
+  { previousPrice: 70000, currentPrice: 65000, delta: -5000 },
+  '价格下降且满足提醒条件时应提醒',
+);
+assert.equal(
+  evaluatePriceDrop({ previousPrice: 70000, currentPrice: 70000, shouldAlert: true, maxPriceYen: 70000 }),
+  null,
+  '价格未下降不得提醒',
+);
+assert.equal(
+  evaluatePriceDrop({ previousPrice: 70000, currentPrice: 72000, shouldAlert: true, maxPriceYen: 70000 }),
+  null,
+  '价格上涨不得提醒',
+);
+assert.equal(
+  evaluatePriceDrop({ previousPrice: 70000, currentPrice: 65000, shouldAlert: false, maxPriceYen: 70000 }),
+  null,
+  '不满足提醒条件不得提醒',
+);
+assert.equal(
+  evaluatePriceDrop({ previousPrice: 80000, currentPrice: 75000, shouldAlert: true, maxPriceYen: 70000 }),
+  null,
+  '超出预算上限不得提醒',
+);
+assert.equal(
+  evaluatePriceDrop({ previousPrice: 70000, currentPrice: 65000, shouldAlert: true, maxPriceYen: 70000, lastAlertedPrice: 65000 }),
+  null,
+  '同一价格已提醒过不得重复提醒',
+);
+assert.equal(
+  evaluatePriceDrop({ previousPrice: null, currentPrice: 65000, shouldAlert: true, maxPriceYen: 70000 }),
+  null,
+  '缺少前价时无法判断降价，不得提醒',
+);
 
 assert.deepEqual(
   mergeResultHistory(null, { price: 70000, likeCount: 2 }, '2026-08-15T00:00:00.000Z', {}),

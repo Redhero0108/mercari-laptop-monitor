@@ -7,10 +7,11 @@
   "intelOnly": false,
   "minRyzenSeries": 6,
   "maxConditionLevel": 3,
-  "detailCheckLimit": 15,
+  "detailCheckLimit": 30,
   "metadataRefreshLimit": 5,
   "likesRefreshMinutes": 10,
   "likesRefreshConcurrency": 3,
+  "searchConcurrency": 3,
   "headless": true,
   "notify": true,
   "allowedSeries": [
@@ -63,5 +64,28 @@
     "VAIO Pro 32GB",
     "Dell Latitude 32GB",
     "HP EliteBook 32GB"
+  ],
+  "wideQueries": [
+    "X1 Carbon",
+    "ThinkPad T14",
+    "ThinkPad T14s",
+    "ThinkPad X13",
+    "ThinkPad P14s",
+    "ThinkPad P16s",
+    "ThinkPad L14",
+    "HP ProBook",
+    "Dell Precision",
+    "レッツノート",
+    "dynabook G83",
+    "LIFEBOOK U7412",
+    "LIFEBOOK U9312",
+    "NEC VersaPro",
+    "ExpertBook B9",
+    "ExpertBook B5",
+    "HP ZBook Firefly",
+    "HP ZBook Power",
+    "VAIO Pro",
+    "Dell Latitude",
+    "HP EliteBook"
   ]
 }

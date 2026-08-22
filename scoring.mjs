@@ -1,5 +1,6 @@
 import { conditionLevel } from './conditions.mjs';
 import { detectLaptopSeries, isAllowedLaptopSeries } from './laptop-filters.mjs';
+import { parseMemorySpec, parseStorageSpec } from './spec-parser.mjs';
 
 const BUSINESS_MODELS = /elitebook|probook|latitude|thinkpad|dynabook\s*g\d|lifebook\s*u|let'?s\s*note|vaio\s*pro|expertbook\s*b9/i;
 const SEVERE_DEFECTS = /ジャンク|junk|部品取り|起動不可|電源(?:が)?入らない|ssdなし|ストレージなし|画面割れ|液晶割れ|bios(?:ロック|パスワード)|パスワード不明/i;
@@ -112,10 +113,12 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
   const reasons = [];
   let score = 0;
 
-  const has32GB = /(?:メモリ|memory|ram)?\s*32\s*(?:gb|g)\b/i.test(text);
-  const has1TB = /(?:1\s*tb|1000\s*gb|1024\s*gb)\b/i.test(text);
-  const has512GB = has1TB || /512\s*(?:gb|g)\b/i.test(text) || hasUpgradeable256GBStorage(text);
-  const hasSSD = /ssd|nvme|m\.2/i.test(text);
+  const memory = parseMemorySpec(text);
+  const storage = parseStorageSpec(text);
+  const has32GB = memory.detectedGB === 32;
+  const has1TB = storage.totalSSDGB >= 1000;
+  const has512GB = has1TB || storage.totalSSDGB >= 512 || hasUpgradeable256GBStorage(text);
+  const hasSSD = storage.hasSSD;
   const hasWindows11 = /windows\s*11|win\s*11/i.test(text);
   const excludedPlatform = /macbook|chromebook|chrome\s*os|iMac/i.test(text);
   const severeDefect = hasSevereDefect(text);

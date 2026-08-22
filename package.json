@@ -7,7 +7,7 @@
     "mercari-watch": "./cli.mjs"
   },
   "scripts": {
-    "test": "node test-cli.mjs && node test-availability.mjs && node test-conditions.mjs && node test-laptop-filters.mjs && node test-likes.mjs && node test-powershell.mjs && node test-result-history.mjs && node test-results-page.mjs && node test-runtime-intervals.mjs && node test-scoring.mjs && node test-state-migrations.mjs && node test-time.mjs",
-    "check": "node --check cli.mjs && node --check cli-lib.mjs && node --check laptop-filters.mjs && node --check result-history.mjs && node --check results-page.mjs && node --check state-migrations.mjs && node --check monitor.mjs"
+    "test": "node test-cli.mjs && node test-availability.mjs && node test-conditions.mjs && node test-laptop-filters.mjs && node test-likes.mjs && node test-powershell.mjs && node test-result-history.mjs && node test-results-page.mjs && node test-runtime-intervals.mjs && node test-scoring.mjs && node test-spec-parser.mjs && node test-state-migrations.mjs && node test-time.mjs",
+    "check": "node --check cli.mjs && node --check cli-lib.mjs && node --check laptop-filters.mjs && node --check mercari-adapter.mjs && node --check result-history.mjs && node --check results-page.mjs && node --check scoring.mjs && node --check spec-parser.mjs && node --check state-migrations.mjs && node --check monitor.mjs"
   }
 }
