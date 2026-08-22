@@ -12,6 +12,36 @@ const SERIES_RULES = [
     pattern: /\bx1\s*carbon\b|\bx1carbon\b/i,
   },
   {
+    id: 'thinkpad-t14',
+    label: 'ThinkPad T14',
+    pattern: /\bthink\s*pad\s+t14(?:\b|\s|[-/])/i,
+  },
+  {
+    id: 'thinkpad-t14s',
+    label: 'ThinkPad T14s',
+    pattern: /\bthink\s*pad\s+t14s\b/i,
+  },
+  {
+    id: 'thinkpad-x13',
+    label: 'ThinkPad X13',
+    pattern: /\bthink\s*pad\s+x13\b/i,
+  },
+  {
+    id: 'thinkpad-p14s',
+    label: 'ThinkPad P14s',
+    pattern: /\bthink\s*pad\s+p14s\b/i,
+  },
+  {
+    id: 'thinkpad-p16s',
+    label: 'ThinkPad P16s',
+    pattern: /\bthink\s*pad\s+p16s\b/i,
+  },
+  {
+    id: 'thinkpad-l14',
+    label: 'ThinkPad L14',
+    pattern: /\bthink\s*pad\s+l14\b/i,
+  },
+  {
     id: 'hp-probook',
     label: 'HP ProBook',
     pattern: /(?:\bhp\s+)?\bpro\s*book\b/i,
@@ -37,6 +67,11 @@ const SERIES_RULES = [
     pattern: /\blife\s*book\s*u7412\b/i,
   },
   {
+    id: 'fujitsu-lifebook-u9312',
+    label: 'Fujitsu LIFEBOOK U9312',
+    pattern: /\blife\s*book\s*u9312\b/i,
+  },
+  {
     id: 'nec-versapro-premium',
     label: 'NEC VersaPro Premium Mobile',
     pattern: /^(?=.*\bversapro\b)(?=.*(?:ultra\s*lite|タイプ\s*v(?:n|g|h|m)\b))/i,
@@ -45,6 +80,21 @@ const SERIES_RULES = [
     id: 'asus-expertbook-b9',
     label: 'ASUS ExpertBook B9',
     pattern: /\bexpert\s*book\s*b9(?:\d{3})?\b/i,
+  },
+  {
+    id: 'asus-expertbook-b5',
+    label: 'ASUS ExpertBook B5',
+    pattern: /\bexpert\s*book\s*b5(?:\d{3})?\b/i,
+  },
+  {
+    id: 'hp-zbook-firefly',
+    label: 'HP ZBook Firefly',
+    pattern: /(?:\bhp\s+)?\bz\s*book\s+firefly\b/i,
+  },
+  {
+    id: 'hp-zbook-power',
+    label: 'HP ZBook Power',
+    pattern: /(?:\bhp\s+)?\bz\s*book\s+power\b/i,
   },
   {
     id: 'vaio-pro',

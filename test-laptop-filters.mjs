@@ -6,6 +6,22 @@ const allowedSeries = [...filters.DEFAULT_ALLOWED_SERIES];
 const seriesCases = [
   ['Lenovo ThinkPad X1 Carbon Gen10', 'thinkpad-x1-carbon'],
   ['X1 Carbon Gen10', 'thinkpad-x1-carbon'],
+  ['ThinkPad T14 Gen 3', 'thinkpad-t14'],
+  ['ThinkPad T14s', 'thinkpad-t14s'],
+  ['ThinkPad X13', 'thinkpad-x13'],
+  ['ThinkPad P14s Gen 3', 'thinkpad-p14s'],
+  ['ThinkPad P16s', 'thinkpad-p16s'],
+  ['ThinkPad L14', 'thinkpad-l14'],
+  ['HP EliteBook 840 G9', 'hp-elitebook'],
+  ['HP EliteBook 1040 G9', 'hp-elitebook'],
+  ['HP ZBook Firefly 14 G9', 'hp-zbook-firefly'],
+  ['HP ZBook Power', 'hp-zbook-power'],
+  ['Dell Latitude 5430', 'dell-latitude-premium'],
+  ['Dynabook G83/KV', 'dynabook-g83'],
+  ['Fujitsu LIFEBOOK U9312', 'fujitsu-lifebook-u9312'],
+  ["Panasonic Let's note FV", 'panasonic-lets-note'],
+  ['ASUS ExpertBook B5', 'asus-expertbook-b5'],
+  ['NEC VersaPro UltraLite', 'nec-versapro-premium'],
   ['HP ProBook 450 G9', 'hp-probook'],
   ['Dell Precision 5570', 'dell-precision'],
   ['Dell Precision7780 Core i9', 'dell-precision'],
@@ -28,9 +44,7 @@ for (const [title, expectedId] of seriesCases) {
   assert.equal(filters.isAllowedLaptopSeries(title, allowedSeries), true, title);
 }
 for (const title of [
-  'Fujitsu LIFEBOOK U9312 Core i5',
   'NEC VersaPro VKM44/X-C Core i5',
-  'ASUS ExpertBook B5 Core i5',
   'VAIO SX12 Core i5',
   'Dell Latitude 3420 Core i5',
 ]) {
