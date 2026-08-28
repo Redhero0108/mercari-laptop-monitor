@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,9 @@ if (process.platform !== 'win32') {
 }
 
 const appDir = fileURLToPath(new URL('.', import.meta.url));
+const backgroundScript = readFileSync(join(appDir, 'start-background.ps1'), 'utf8');
+assert.match(backgroundScript, /Win32_Process/, '后台启动必须校验PID对应的实际进程');
+assert.match(backgroundScript, /monitor\\\.mjs/, '后台启动必须确认进程确实运行monitor.mjs');
 const scripts = ['start-background.ps1', 'start-monitor.ps1', 'stop-background.ps1'];
 const parseCommand = [
   '$tokens = $null',
