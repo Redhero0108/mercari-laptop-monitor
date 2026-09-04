@@ -9,47 +9,47 @@ const SERIES_RULES = [
   {
     id: 'thinkpad-x1-carbon',
     label: 'ThinkPad X1 Carbon',
-    pattern: /\bx1\s*carbon\b|\bx1carbon\b/i,
+    pattern: /(?:\bthink\s*pad\s+|\blenovo\s+|レノボ\s*)?x1\s*carbon\b|\bx1carbon\b/i,
   },
   {
     id: 'thinkpad-t14',
     label: 'ThinkPad T14',
-    pattern: /\bthink\s*pad\s+t14(?:\b|\s|[-/])/i,
+    pattern: /(?:\bthink\s*pad\s+|\blenovo\s+|レノボ\s*)t14(?:\b|\s|[-/])/i,
   },
   {
     id: 'thinkpad-t14s',
     label: 'ThinkPad T14s',
-    pattern: /\bthink\s*pad\s+t14s\b/i,
+    pattern: /(?:\bthink\s*pad\s+|\blenovo\s+|レノボ\s*)t14s\b/i,
   },
   {
     id: 'thinkpad-x13',
     label: 'ThinkPad X13',
-    pattern: /\bthink\s*pad\s+x13\b/i,
+    pattern: /(?:\bthink\s*pad\s+|\blenovo\s+|レノボ\s*)x13\b/i,
   },
   {
     id: 'thinkpad-p14s',
     label: 'ThinkPad P14s',
-    pattern: /\bthink\s*pad\s+p14s\b/i,
+    pattern: /(?:\bthink\s*pad\s+|\blenovo\s+|レノボ\s*)p14s\b/i,
   },
   {
     id: 'thinkpad-p16s',
     label: 'ThinkPad P16s',
-    pattern: /\bthink\s*pad\s+p16s\b/i,
+    pattern: /(?:\bthink\s*pad\s+|\blenovo\s+|レノボ\s*)p16s\b/i,
   },
   {
     id: 'thinkpad-l14',
     label: 'ThinkPad L14',
-    pattern: /\bthink\s*pad\s+l14\b/i,
+    pattern: /(?:\bthink\s*pad\s+|\blenovo\s+|レノボ\s*)l14\b/i,
   },
   {
     id: 'hp-probook',
     label: 'HP ProBook',
-    pattern: /(?:\bhp\s+)?\bpro\s*book\b/i,
+    pattern: /(?:\bhp\s+)?(?:\bpro\s*book\b|プロブック)/i,
   },
   {
     id: 'dell-precision',
     label: 'Dell Precision',
-    pattern: /(?:\bdell\s+)?\bprecision(?:\b|(?=\d{4}\b))/i,
+    pattern: /(?:\bdell\s+)?(?:\bprecision(?:\b|(?=\d{4}\b))|プレシジョン)/i,
   },
   {
     id: 'panasonic-lets-note',
@@ -59,57 +59,57 @@ const SERIES_RULES = [
   {
     id: 'dynabook-g83',
     label: 'Dynabook G83',
-    pattern: /\bdynabook\s*g83\b|(?:^|\s)g83(?:\/[a-z0-9]+)?\b/i,
+    pattern: /(?:\bdynabook\b|ダイナブック)\s*g83\b|(?:^|\s)g83(?:\/[a-z0-9]+)?\b/i,
   },
   {
     id: 'fujitsu-lifebook-u7412',
     label: 'Fujitsu LIFEBOOK U7412',
-    pattern: /\blife\s*book\s*u7412\b/i,
+    pattern: /(?:\blife\s*book\b|ライフブック)\s*u7412\b/i,
   },
   {
     id: 'fujitsu-lifebook-u9312',
     label: 'Fujitsu LIFEBOOK U9312',
-    pattern: /\blife\s*book\s*u9312\b/i,
+    pattern: /(?:\blife\s*book\b|ライフブック)\s*u9312\b/i,
   },
   {
     id: 'nec-versapro-premium',
     label: 'NEC VersaPro Premium Mobile',
-    pattern: /^(?=.*\bversapro\b)(?=.*(?:ultra\s*lite|タイプ\s*v(?:n|g|h|m)\b))/i,
+    pattern: /^(?=.*(?:\bversapro\b|バーサプロ))(?=.*(?:ultra\s*lite|タイプ\s*v(?:n|g|h|m)\b))/i,
   },
   {
     id: 'asus-expertbook-b9',
     label: 'ASUS ExpertBook B9',
-    pattern: /\bexpert\s*book\s*b9(?:\d{3})?\b/i,
+    pattern: /(?:\bexpert\s*book\b|エキスパートブック)\s*b9(?:\d{3})?\b/i,
   },
   {
     id: 'asus-expertbook-b5',
     label: 'ASUS ExpertBook B5',
-    pattern: /\bexpert\s*book\s*b5(?:\d{3})?\b/i,
+    pattern: /(?:\bexpert\s*book\b|エキスパートブック)\s*b5(?:\d{3})?\b/i,
   },
   {
     id: 'hp-zbook-firefly',
     label: 'HP ZBook Firefly',
-    pattern: /(?:\bhp\s+)?\bz\s*book\s+firefly\b/i,
+    pattern: /(?:\bhp\s+)?(?:\bz\s*book\s+firefly\b|Ｚブック\s*ファイアフライ)/i,
   },
   {
     id: 'hp-zbook-power',
     label: 'HP ZBook Power',
-    pattern: /(?:\bhp\s+)?\bz\s*book\s+power\b/i,
+    pattern: /(?:\bhp\s+)?(?:\bz\s*book\s+power\b|Ｚブック\s*パワー)/i,
   },
   {
     id: 'vaio-pro',
     label: 'VAIO Pro',
-    pattern: /\bvaio\s*pro(?:\b|(?=(?:pj|pg|pk|bk|bm)\b))/i,
+    pattern: /(?:\bvaio\s*pro|バイオ\s*プロ)(?:\b|(?=(?:pj|pg|pk|bk|bm)\b))/i,
   },
   {
     id: 'dell-latitude-premium',
     label: 'Dell Latitude 5000/7000/9000',
-    pattern: /\blatitude\s*(?:5|7|9)\d{3}\b/i,
+    pattern: /(?:\blatitude|ラティチュード)\s*(?:5|7|9)\d{3}\b/i,
   },
   {
     id: 'hp-elitebook',
     label: 'HP EliteBook',
-    pattern: /(?:\bhp\s+)?\belite\s*book\b/i,
+    pattern: /(?:\bhp\s+)?(?:\belite\s*book\b|エリートブック)/i,
   },
 ];
 
