@@ -4,7 +4,7 @@
 
 - 编程＋云端AI
 - 32GB内存
-- 512GB以上SSD（1TB额外加分）
+- 512GB以上SSD（1TB额外加分）；Panasonic Let's note 允许明确可升级到1TB以上的256GB SSD
 - Intel第12代以上（同时接受更新的Core Ultra）；同时接受性能相当于Intel第12代以上的Ryzen 6000系列及更新型号
 - 系列只接受11类品质商务本：ThinkPad X1 Carbon、HP ProBook、Dell Precision、Panasonic Let's note、Dynabook G83、LIFEBOOK U7412、品质型NEC VersaPro、ExpertBook B9、VAIO Pro、Latitude 5000/7000/9000、HP EliteBook
 - 价格不超过¥70,000且满足其他条件时才提醒；¥70,001～¥99,999只保留在结果页供参考

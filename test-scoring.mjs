@@ -130,7 +130,7 @@ assert.equal(ssd512.has1TB, false);
 assert.equal(ssd512.hasSSD, true);
 
 const replaceable256 = assessCandidate({
-  title: 'ThinkPad T14 第12世代 Core i5 32GB SSD256GB 可更换 支持扩容至2TB Windows11',
+  title: "Panasonic Let's note CF-FV 第12世代 Core i5 32GB SSD256GB 可更换 支持扩容至2TB Windows11",
   price: 55000,
   itemCondition: '目立った傷や汚れなし',
 }, { minIntelGeneration: 12, intelOnly: true });
@@ -144,6 +144,14 @@ const fixed256 = assessCandidate({
 }, { minIntelGeneration: 12, intelOnly: true });
 assert.equal(fixed256.has512GB, false);
 assert.equal(fixed256.shouldAlert, false);
+
+const otherBrand256 = assessCandidate({
+  title: 'ThinkPad T14 第12世代 Core i5 32GB SSD256GB 可更换 支持扩容至2TB Windows11',
+  price: 55000,
+  itemCondition: '目立った傷や汚れなし',
+}, { minIntelGeneration: 12, intelOnly: true });
+assert.equal(otherBrand256.has512GB, false);
+assert.equal(otherBrand256.shouldAlert, false);
 assert.equal(ssd512.shouldAlert, true);
 
 const hdd512 = assessCandidate({

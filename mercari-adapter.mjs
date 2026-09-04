@@ -105,7 +105,7 @@ export async function readDetail(page, item) {
           ...(image.getAttribute('srcset') || '').split(',').map((part) => part.trim().split(/\s+/, 1)[0]),
         ]),
         ].filter(Boolean),
-        likeText: document.querySelector('[data-testid="icon-heart-button"] button')?.innerText?.trim() ?? null,
+        likeText: document.querySelector('[data-testid="icon-heart-button"]')?.innerText?.trim() ?? null,
         itemCondition,
         soldButtonText: [...document.querySelectorAll('button')]
           .find((button) => button.disabled && button.textContent?.trim() === '売り切れました')

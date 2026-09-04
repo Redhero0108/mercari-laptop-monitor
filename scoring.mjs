@@ -117,7 +117,9 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
   const storage = parseStorageSpec(text);
   const has32GB = memory.detectedGB === 32;
   const has1TB = storage.totalSSDGB >= 1000;
-  const has512GB = has1TB || storage.totalSSDGB >= 512 || hasUpgradeable256GBStorage(text);
+  const has512GB = has1TB
+    || storage.totalSSDGB >= 512
+    || (series?.id === 'panasonic-lets-note' && hasUpgradeable256GBStorage(text));
   const hasSSD = storage.hasSSD;
   const hasWindows11 = /windows\s*11|win\s*11/i.test(text);
   const excludedPlatform = /macbook|chromebook|chrome\s*os|iMac/i.test(text);
@@ -147,7 +149,9 @@ export function assessCandidate({ title, detail = '', price = null, itemConditio
     reasons.push('1TB存储');
   } else if (has512GB) {
     score += 10;
-    reasons.push(hasUpgradeable256GBStorage(text) ? '256GB但明确可升级至1TB以上' : '512GB存储');
+    reasons.push(series?.id === 'panasonic-lets-note' && hasUpgradeable256GBStorage(text)
+      ? 'Let’s note 256GB但明确可升级至1TB以上'
+      : '512GB存储');
   } else {
     score -= 30;
   }
