@@ -5,14 +5,14 @@ function compact(text) {
     .trim();
 }
 
-// 前缀型：出现在容量之前的升级提示（如“最大32GB”）。
+// 前置型：容量の前に現れる増設/アップグレード表記（例「最大32GB」）。
 const UPGRADE_HINT_BEFORE = /(?:最大|拡張|アップグレード|upgradeable|max(?:imum)?)/i;
-// 后缀型：出现在容量之后的升级提示（如“32GBまで”“32GB対応”）。
+// 後置型：容量の後に現れる増設表記（例「32GBまで」「32GB対応」）。
 const UPGRADE_HINT_AFTER = /(?:まで|対応)/i;
 
 /**
- * 从商品文本中解析内存容量，区分“实装容量”“双通道合计”与“最大支持值”。
- * 返回 { detectedGB, dual16GB, quad8GB, upgradeClaim, raw }。
+ * 商品テキストからメモリ容量を解析し、「実装容量」「デュアルチャネル合計」「最大サポート値」を区別する。
+ * 戻り値 { detectedGB, dual16GB, quad8GB, upgradeClaim, raw }。
  */
 export function parseMemorySpec(text) {
   const normalized = compact(text);
@@ -61,7 +61,7 @@ export function parseMemorySpec(text) {
     result.detectedGB = direct[0].value;
     result.raw = direct[0].raw;
   } else {
-    // 只有“最大32GB”等表述时，无法确认实装容量。
+    // 「最大32GB」などの表記だけでは実装容量を確認できない。
     result.detectedGB = null;
     result.raw = mentions[0].raw;
   }
@@ -69,15 +69,15 @@ export function parseMemorySpec(text) {
 }
 
 const SSD_TYPE = /^(?:ssd|nvme|m\.2)$/i;
-// “类型在前”最可靠（如 SSD1TB、SSD 512GB）；“容量在前”需要额外消歧（如 512GB SSD）。
+// 「型番が先」が最も確実（例 SSD1TB、SSD 512GB）。「容量が先」は追加の曖昧性解消が必要（例 512GB SSD）。
 const TYPE_FIRST_RE = /(?<type>ssd|nvme|m\.2|hdd|emmc|ハードディスク|\bhd\b)\s*(?<value>\d{1,4})\s*(?<unit>tb|t|gb|g)\b/gi;
 const CAP_FIRST_RE = /(?<value>\d{1,4})\s*(?<unit>tb|t|gb|g)\b\s*(?<type>ssd|nvme|m\.2|hdd|emmc|ハードディスク|\bhd\b)/gi;
 
 /**
- * 从商品文本中解析存储设备，区分 SSD 类与非 SSD 类（HDD/eMMC），
- * 并分别累计容量，避免把 HDD 的 1TB 误算成 SSD 容量，
- * 也避免把“32GB SSD1TB”中的内存 32GB 误算成 SSD 容量。
- * 返回 { hasSSD, hasNVMe, totalSSDGB, totalNonSsdGB, ssdCapacities, nonSsdCapacities }。
+ * 商品テキストからストレージ機器を解析し、SSD 系と非 SSD 系（HDD/eMMC）を区別する。
+ * それぞれの容量を別々に集計し、HDD の 1TB を SSD 容量と誤算しないようにする。
+ * また「32GB SSD1TB」のメモリ 32GB を SSD 容量と誤算しないようにする。
+ * 戻り値 { hasSSD, hasNVMe, totalSSDGB, totalNonSsdGB, ssdCapacities, nonSsdCapacities }。
  */
 export function parseStorageSpec(text) {
   const normalized = compact(text);
@@ -111,8 +111,8 @@ export function parseStorageSpec(text) {
   }
   for (const match of normalized.matchAll(CAP_FIRST_RE)) {
     const afterType = normalized.slice(match.index + match[0].length);
-    // 若该类型后面紧跟容量，说明它属于“类型在前”的存储（如“32GB SSD 512GB”里的 SSD 512GB），
-    // 此时前面的 32GB 是内存，不应算作 SSD 容量。
+    // 型番の後に容量が続く場合は「型番が先」のストレージに該当する（例「32GB SSD 512GB」の SSD 512GB）。
+    // このとき前の 32GB はメモリなので、SSD 容量として数えてはいけない。
     if (/^\s*\d{1,4}\s*(?:tb|t|gb|g)\b/i.test(afterType)) continue;
     addDrive(match.groups.type, Number(match.groups.value), match.groups.unit);
   }

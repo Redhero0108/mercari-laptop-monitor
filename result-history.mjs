@@ -1,8 +1,8 @@
 const MAX_HISTORY_POINTS = 12;
 
 /**
- * 判断是否应就降价发出提醒。仅在“价格确实下降、当前满足提醒条件、
- * 且未针对该价格提醒过”时返回降价信息，否则返回 null。
+ * 値下げについて通知すべきかを判定する。「価格が実際に下がり、現在通知条件を満たし、
+ * かつその価格で未通知」の場合のみ値下げ情報を返し、それ以外は null を返す。
  */
 export function evaluatePriceDrop({
   previousPrice,

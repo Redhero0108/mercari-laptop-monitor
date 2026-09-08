@@ -6,7 +6,7 @@ const BUSINESS_MODELS = /elitebook|probook|latitude|thinkpad|dynabook\s*g\d|life
 const SEVERE_DEFECTS = /ジャンク|junk|部品取り|起動不可|電源(?:が)?入らない|ssdなし|ストレージなし|画面割れ|液晶割れ|bios(?:ロック|パスワード)|パスワード不明/i;
 
 function hasSevereDefect(text) {
-  // 中古店常见的保修句子会写“电源打不开时请联系”，这不代表当前机器无法开机。
+  // 中古店の保証文に「電源が入らない場合はご連絡ください」と書かれることがあるが、これは現在のマシンが起動不能という意味ではない。
   const riskText = text
     .replace(/電源(?:が)?入らないなどの不具合が発生した場合/g, '')
     .replace(/(?:ジャンク(?:品)?|起動不可|部品取り)(?:ではありません|ではない)/g, '');

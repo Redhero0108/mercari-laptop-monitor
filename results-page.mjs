@@ -379,24 +379,24 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
       <td class="decision-cell">${decision}</td>
       <td class="numeric-cell like-cell" title="${escapeHtml(likeCellTitle)}"><span>${escapeHtml(likeCount)}</span><span class="freshness-dot ${likeFresh ? 'is-fresh' : 'is-stale'}" aria-hidden="true"></span></td>
       <td class="condition-cell" title="${escapeHtml(condition.title)}">${escapeHtml(condition.label)}</td>
-      <td class="product-cell"><div class="product-title-line">${changeMarkup}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}<span class="external-mark" aria-hidden="true">↗</span></a></div><div class="product-meta"><span class="product-facts" title="${escapeHtml(reasons)}">${escapeHtml(facts)}</span><span class="product-actions"><span class="triage-status">未確認</span><button type="button" class="detail-toggle" aria-expanded="false" aria-controls="${escapeHtml(detailsId)}">詳細</button></span></div><div id="${escapeHtml(detailsId)}" class="product-details" hidden><div class="detail-grid"><span><strongスペック信頼度</strong><span class="confidence confidence-${escapeHtml(confidence.level)}">${escapeHtml(confidence.label)}</span> ${escapeHtml(confidence.detail)}</span><span><strong>判定理由</strong>${escapeHtml(reasonsJa || 'なし')}</span><span><strong>元の商品状態</strong>${escapeHtml(entry.itemCondition || '状態不明')}</span><span><strong>日時</strong>初回発見 ${escapeHtml(firstSeenAt.full)} JST ｜ 出品日時 ${escapeHtml(publishedAt.full)} JST ｜ 最終確認 ${escapeHtml(checkedAt.full)} JST</span><span><strong>価格履歴</strong>${escapeHtml(latestPriceHistory)}</span></div><div class="triage-controls" role="group" aria-label="閲覧状態を設定"><span>閲覧状態</span><button type="button" class="triage-button" data-triage-action="unseen" aria-pressed="true">未確認</button><button type="button" class="triage-button" data-triage-action="watch" aria-pressed="false">ウォッチ</button><button type="button" class="triage-button" data-triage-action="ignored" aria-pressed="false">無視略</button></div></div></td>
+      <td class="product-cell"><div class="product-title-line">${changeMarkup}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}<span class="external-mark" aria-hidden="true">↗</span></a></div><div class="product-meta"><span class="product-facts" title="${escapeHtml(reasonsJa)}">${escapeHtml(facts)}</span><span class="product-actions"><span class="triage-status">未確認</span><button type="button" class="detail-toggle" aria-expanded="false" aria-controls="${escapeHtml(detailsId)}">詳細</button></span></div><div id="${escapeHtml(detailsId)}" class="product-details" hidden><div class="detail-grid"><span><strongスペック信頼度</strong><span class="confidence confidence-${escapeHtml(confidence.level)}">${escapeHtml(confidence.label)}</span> ${escapeHtml(confidence.detail)}</span><span><strong>判定理由</strong>${escapeHtml(reasonsJa || 'なし')}</span><span><strong>元の商品状態</strong>${escapeHtml(entry.itemCondition || '状態不明')}</span><span><strong>日時</strong>初回発見 ${escapeHtml(firstSeenAt.full)} JST ｜ 出品日時 ${escapeHtml(publishedAt.full)} JST ｜ 最終確認 ${escapeHtml(checkedAt.full)} JST</span><span><strong>価格履歴</strong>${escapeHtml(latestPriceHistory)}</span></div><div class="triage-controls" role="group" aria-label="閲覧状態を設定"><span>閲覧状態</span><button type="button" class="triage-button" data-triage-action="unseen" aria-pressed="true">未確認</button><button type="button" class="triage-button" data-triage-action="watch" aria-pressed="false">ウォッチ</button><button type="button" class="triage-button" data-triage-action="ignored" aria-pressed="false">無視略</button></div></div></td>
       <td class="date-cell" title="${escapeHtml(`${publishedAt.full} JST`)}">${escapeHtml(publishedAt.short)}</td>
     </tr>`;
   }).join('\n');
 
-  const rows = resultRows || '<tr class="initial-empty"><td class="empty" colspan="7">还没有检查结果，请先运行监测器或诊断模式。</td></tr>';
+  const rows = resultRows || '<tr class="initial-empty"><td class="empty" colspan="7">まだ確認結果がありません。先にモニターまたは診断モードを実行してください。</td></tr>';
   const embeddedNormalizeSearch = normalizeSearch.toString();
   const embeddedMatchesResultRow = matchesResultRow.toString();
   const embeddedSortDescription = sortDescription.toString();
 
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="refresh" content="600">
   <link rel="icon" href="data:,">
-  <title>Mercari 笔记本监测结果</title>
+  <title>Mercari ノートPC監視結果</title>
   <style>
     :root { color-scheme: light; font-family: Inter, "Segoe UI", "Microsoft YaHei", "Yu Gothic UI", sans-serif; }
     * { box-sizing: border-box; }
@@ -535,47 +535,47 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
 </head>
 <body><main>
   <header class="page-header">
-    <div class="brand-lockup"><span class="brand-mark">M</span><div><p class="eyebrow">MERCARI LAPTOP MONITOR</p><h1>Mercari 笔记本监测结果</h1></div></div>
+    <div class="brand-lockup"><span class="brand-mark">M</span><div><p class="eyebrow">MERCARI LAPTOP MONITOR</p><h1>Mercari ノートPC監視結果</h1></div></div>
     <div class="header-meta">
-      <div id="monitor-status" class="monitor-status" title="未运行时请双击 open-results.cmd"><span class="monitor-status-dot" aria-hidden="true"></span><span id="monitor-status-text">正在检测后台状态…</span></div>
-      <p class="hint">搜索或点击栏目排序 · 页面每10分钟刷新 · 后台每${escapeHtml(pollMinutes)}分钟检查</p>
+      <div id="monitor-status" class="monitor-status" title="未実行時は open-results.cmd をダブルクリック"><span class="monitor-status-dot" aria-hidden="true"></span><span id="monitor-status-text">バックグラウンド状態を確認中…</span></div>
+      <p class="hint">検索または列見出しクリックで並べ替え ・ ページは10分ごとに自動更新 ・ バックグラウンドは${escapeHtml(pollMinutes)}分ごとにチェック</p>
     </div>
   </header>
-  <section class="summary-strip" role="group" aria-label="结果概览与快捷筛选">
-    <button type="button" class="filter-button active" data-filter="all"><span class="metric-label">当前记录</span><strong class="metric-value">${safeEntries.length}</strong></button>
-    <button type="button" class="filter-button" data-filter="match"><span class="metric-label">符合提醒</span><strong class="metric-value">${qualifiedEntries.length}</strong></button>
-    <button type="button" class="filter-button" data-filter="budget"><span class="metric-label">预算内 ≤ ¥${maxPriceYen.toLocaleString('ja-JP')}</span><strong class="metric-value">${budgetEntries.length}</strong></button>
-    <button type="button" class="filter-button" data-filter="changed"><span class="metric-label">24H 有变化</span><strong class="metric-value">${changedEntries.length}</strong></button>
-    <button type="button" class="filter-button" data-filter="top"><span class="metric-label">S / A 级</span><strong class="metric-value">${topGradeEntries.length}</strong></button>
+  <section class="summary-strip" role="group" aria-label="結果概要とクイックフィルター">
+    <button type="button" class="filter-button active" data-filter="all"><span class="metric-label">現在の記録</span><strong class="metric-value">${safeEntries.length}</strong></button>
+    <button type="button" class="filter-button" data-filter="match"><span class="metric-label">通知条件合致</span><strong class="metric-value">${qualifiedEntries.length}</strong></button>
+    <button type="button" class="filter-button" data-filter="budget"><span class="metric-label">予算内 ≤ ¥${maxPriceYen.toLocaleString('ja-JP')}</span><strong class="metric-value">${budgetEntries.length}</strong></button>
+    <button type="button" class="filter-button" data-filter="changed"><span class="metric-label">24H 変動あり</span><strong class="metric-value">${changedEntries.length}</strong></button>
+    <button type="button" class="filter-button" data-filter="top"><span class="metric-label">S / A ランク</span><strong class="metric-value">${topGradeEntries.length}</strong></button>
   </section>
-  <section class="best-candidate" aria-label="当前最佳候选">
-    <strong class="best-label">当前最佳候选</strong>
-    ${bestEntry ? `<span class="best-facts"><span class="best-grade">${escapeHtml(bestEntry.grade)}级</span><strong>¥${Number(bestEntry.price).toLocaleString('ja-JP')}</strong><span class="best-budget">预算内</span></span><a class="best-title" title="${escapeHtml(bestEntry.title)}" href="${escapeHtml(bestEntry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(bestEntry.title)}<span class="external-mark" aria-hidden="true">↗</span></a>` : '<span class="best-empty">暂无符合条件且规格一致的商品</span>'}
+  <section class="best-candidate" aria-label="現在の最有力候補">
+    <strong class="best-label">現在の最有力候補</strong>
+    ${bestEntry ? `<span class="best-facts"><span class="best-grade">${escapeHtml(bestEntry.grade)}ランク</span><strong>¥${Number(bestEntry.price).toLocaleString('ja-JP')}</strong><span class="best-budget">予算内</span></span><a class="best-title" title="${escapeHtml(bestEntry.title)}" href="${escapeHtml(bestEntry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(bestEntry.title)}<span class="external-mark" aria-hidden="true">↗</span></a>` : '<span class="best-empty">条件に合いスペックが一致する商品はありません</span>'}
   </section>
-  <section class="toolbar" aria-label="商品搜索">
+  <section class="toolbar" aria-label="商品検索">
     <div class="search-group">
-      <input id="product-search" class="search-input" type="search" aria-label="搜索商品" placeholder="搜索品牌、型号、CPU、判断…" autocomplete="off">
-      <select id="series-filter" class="control-select" aria-label="筛选系列"><option value="all">全部系列</option>${seriesOptionMarkup}</select>
-      <select id="triage-filter" class="control-select" aria-label="筛选浏览状态"><option value="active">活跃商品</option><option value="unseen">未看</option><option value="watch">关注</option><option value="seen">已看</option><option value="ignored">忽略</option><option value="all">全部（含忽略）</option></select>
-      <output id="result-count" class="result-count" for="product-search" aria-live="polite">显示 ${safeEntries.length} / ${safeEntries.length}</output>
+      <input id="product-search" class="search-input" type="search" aria-label="商品を検索" placeholder="ブランド、型番、CPU、判定で検索…" autocomplete="off">
+      <select id="series-filter" class="control-select" aria-label="シリーズで絞り込み"><option value="all">全シリーズ</option>${seriesOptionMarkup}</select>
+      <select id="triage-filter" class="control-select" aria-label="閲覧状態で絞り込み"><option value="active">アクティブ商品</option><option value="unseen">未確認</option><option value="watch">ウォッチ</option><option value="seen">確認済み</option><option value="ignored">無視</option><option value="all">すべて（無視含む）</option></select>
+      <output id="result-count" class="result-count" for="product-search" aria-live="polite">表示 ${safeEntries.length} / ${safeEntries.length}</output>
     </div>
     <div class="toolbar-state">
-      <output id="sort-summary" class="sort-summary" aria-live="polite">当前排序：推荐顺序</output>
-      <button type="button" class="recommendation-help" title="推荐顺序：符合提醒优先，其次按评分、价格和检查时间排序" aria-label="查看推荐顺序说明">?</button>
-      <button id="reset-sort" class="reset-sort" type="button" hidden>恢复推荐顺序</button>
+      <output id="sort-summary" class="sort-summary" aria-live="polite">現在の並び順：おすすめ順</output>
+      <button type="button" class="recommendation-help" title="おすすめ順：通知条件合致を優先し、次にスコア・価格・確認時刻で並べ替え" aria-label="おすすめ順の説明を表示">?</button>
+      <button id="reset-sort" class="reset-sort" type="button" hidden>おすすめ順に戻す</button>
     </div>
   </section>
   <div class="panel"><table>
     <thead><tr>
-      <th aria-sort="none"><button type="button" class="sort-button" data-sort="grade" data-default-direction="desc">等级 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
-      <th aria-sort="none"><button type="button" class="sort-button" data-sort="price" data-default-direction="asc">价格 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
-      <th aria-sort="none"><button type="button" class="sort-button" data-sort="decision" data-default-direction="desc">判断 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
-      <th aria-sort="none"><button type="button" class="sort-button" data-sort="likes" data-default-direction="desc">收藏数（いいね） <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
-      <th aria-sort="none"><button type="button" class="sort-button" data-sort="condition" data-default-direction="asc">商品状态 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
+      <th aria-sort="none"><button type="button" class="sort-button" data-sort="grade" data-default-direction="desc">ランク <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
+      <th aria-sort="none"><button type="button" class="sort-button" data-sort="price" data-default-direction="asc">価格 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
+      <th aria-sort="none"><button type="button" class="sort-button" data-sort="decision" data-default-direction="desc">判定 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
+      <th aria-sort="none"><button type="button" class="sort-button" data-sort="likes" data-default-direction="desc">いいね数 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
+      <th aria-sort="none"><button type="button" class="sort-button" data-sort="condition" data-default-direction="asc">商品状態 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
       <th aria-sort="none"><button type="button" class="sort-button" data-sort="title" data-default-direction="asc">商品 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
-      <th aria-sort="none"><button type="button" class="sort-button" data-sort="published" data-default-direction="desc">发布时间 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
+      <th aria-sort="none"><button type="button" class="sort-button" data-sort="published" data-default-direction="desc">出品日時 <span class="sort-icon" aria-hidden="true">⇅</span></button></th>
     </tr></thead>
-    <tbody>${rows}<tr id="no-results-row" hidden><td class="empty" colspan="7">没有符合当前筛选和搜索的商品。</td></tr></tbody>
+    <tbody>${rows}<tr id="no-results-row" hidden><td class="empty" colspan="7">現在の絞り込み・検索に一致する商品はありません。</td></tr></tbody>
   </table></div>
 </main>
 <script>
@@ -626,7 +626,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
       const heartbeatMs = Date.parse(status?.heartbeatAt) || 0;
       const ageMs = heartbeatMs ? Date.now() - heartbeatMs : Infinity;
       const heartbeatText = heartbeatMs
-        ? new Intl.DateTimeFormat('zh-CN', {
+        ? new Intl.DateTimeFormat('ja-JP', {
             timeZone: 'Asia/Tokyo',
             hour: '2-digit',
             minute: '2-digit',
@@ -634,7 +634,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
           }).format(heartbeatMs)
         : '';
       const nextCheckText = heartbeatMs
-        ? new Intl.DateTimeFormat('zh-CN', {
+        ? new Intl.DateTimeFormat('ja-JP', {
             timeZone: 'Asia/Tokyo',
             hour: '2-digit',
             minute: '2-digit',
@@ -643,19 +643,19 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
         : '';
       monitorStatus.classList.remove('is-online', 'is-busy', 'is-offline');
       monitorStatus.title = [status?.phase, status?.message].filter(Boolean).join('｜')
-        || '未运行时请双击 open-results.cmd';
+        || '未実行時は open-results.cmd をダブルクリック';
       if (!status || status.running !== true || ageMs > 900_000) {
         monitorStatus.classList.add('is-offline');
         monitorStatusText.textContent = heartbeatText
-          ? '后台未运行｜最后记录 ' + heartbeatText
-          : '后台未启动｜请运行 open-results.cmd';
+          ? 'バックグラウンド未実行｜最終記録 ' + heartbeatText
+          : 'バックグラウンド未起動｜open-results.cmd を実行してください';
         return;
       }
-      const busy = String(status.phase || '').startsWith('正在');
+      const busy = String(status.phase || '') !== '実行中';
       monitorStatus.classList.add(busy ? 'is-busy' : 'is-online');
       monitorStatusText.textContent = busy
-        ? (status.phase || '正在检查') + '｜状态更新 ' + heartbeatText
-        : '后台正常｜上次检查 ' + heartbeatText + '｜下次约 ' + nextCheckText;
+        ? (status.phase || '確認中') + '｜状態更新 ' + heartbeatText
+        : 'バックグラウンド正常｜前回チェック ' + heartbeatText + '｜次回目安 ' + nextCheckText;
     }
 
     function refreshMonitorStatus() {
@@ -700,7 +700,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
         button.closest('th').setAttribute('aria-sort', active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none');
       });
       currentSort = { key, direction };
-      sortSummary.textContent = '当前排序：' + sortDescription(key, direction);
+      sortSummary.textContent = '現在の並び順：' + sortDescription(key, direction);
       resetSortButton.hidden = false;
       if (remember) {
         try { localStorage.setItem(storageKey, JSON.stringify(currentSort)); } catch {}
@@ -716,7 +716,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
         button.closest('th').setAttribute('aria-sort', 'none');
       });
       currentSort = null;
-      sortSummary.textContent = '当前排序：' + sortDescription();
+      sortSummary.textContent = '現在の並び順：' + sortDescription();
       resetSortButton.hidden = true;
       if (remember) {
         try { localStorage.removeItem(storageKey); } catch {}
@@ -729,7 +729,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
 
     function applyRowTriage(row, value) {
       const triage = normalizeTriage(value);
-      const labels = { unseen: '未看', seen: '已看', watch: '关注', ignored: '忽略' };
+      const labels = { unseen: '未確認', seen: '確認済み', watch: 'ウォッチ', ignored: '無視' };
       row.dataset.triage = triage;
       row.classList.toggle('is-seen', triage === 'seen');
       row.classList.toggle('is-watch', triage === 'watch');
@@ -771,7 +771,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
         if (visible) visibleCount += 1;
       });
       filterButtons.forEach((button) => button.classList.toggle('active', button.dataset.filter === currentFilter));
-      resultCount.textContent = '显示 ' + visibleCount + ' / ' + resultRows.length;
+      resultCount.textContent = '表示 ' + visibleCount + ' / ' + resultRows.length;
       noResultsRow.hidden = resultRows.length === 0 || visibleCount !== 0;
       if (rememberFilter) {
         try { localStorage.setItem(filterStorageKey, currentFilter); } catch {}
@@ -815,7 +815,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
       const panel = document.getElementById(button.getAttribute('aria-controls'));
       const expanded = button.getAttribute('aria-expanded') === 'true';
       button.setAttribute('aria-expanded', String(!expanded));
-      button.textContent = expanded ? '详情' : '收起';
+      button.textContent = expanded ? '詳細' : '閉じる';
       panel.hidden = expanded;
     }));
 

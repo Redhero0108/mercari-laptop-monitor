@@ -14,8 +14,8 @@ if (Test-Path -LiteralPath $bundledNode) {
 }
 
 if (-not $nodeExe) {
-    Write-Host 'Node.js 20 or later was not found.' -ForegroundColor Red
-    Read-Host 'Press Enter to exit'
+    Write-Host 'Node.js 20 以降が見つかりませんでした。' -ForegroundColor Red
+    Read-Host 'Enter キーを押して終了'
     exit 1
 }
 
