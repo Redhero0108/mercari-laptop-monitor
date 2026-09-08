@@ -112,8 +112,8 @@ let results = await loadResults();
 let browser;
 let nextSearchAt = 0;
 let nextLikesRefreshAt = 0;
-let monitorPhase = '正在启动';
-let monitorMessage = '正在连接浏览器';
+let monitorPhase = '起動中';
+let monitorMessage = 'ブラウザへ接続中';
 let statusWriteQueue = Promise.resolve();
 
 function missingMetadataCount() {
@@ -160,7 +160,7 @@ async function claimMonitorPid() {
       process.kill(existingPid, 0);
       isRunning = true;
     } catch {}
-    if (isRunning) throw new Error(`监测器已经在后台运行（PID ${existingPid}）`);
+    if (isRunning) throw new Error(`モニターはすでにバックグラウンドで実行中です（PID ${existingPid}）`);
   }
   await writeFile(PID_FILE, `${process.pid}\n`, 'utf8');
 }
@@ -194,7 +194,7 @@ async function setMonitorPhase(phase, message = '') {
 }
 
 async function stopHeartbeat() {
-  await writeMonitorStatus(false, '已停止', '请双击 open-results.cmd 启动后台监测');
+  await writeMonitorStatus(false, '停止済み', 'open-results.cmd をダブルクリックしてバックグラウンド監視を開始してください');
 }
 
 async function withResultsLock(action) {
@@ -214,7 +214,7 @@ async function withResultsLock(action) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
-  if (!lockHandle) throw new Error('等待结果文件锁超时');
+  if (!lockHandle) throw new Error('結果ファイルのロック待機がタイムアウトしました');
 
   try {
     return await action();
@@ -286,7 +286,7 @@ async function syncResultsPage() {
 
 async function recordResult(item, assessment) {
   await withResultsLock(async () => {
-    // 每次写入前重新读取磁盘最新版，避免并行监测进程用旧内存覆盖已补查的数据。
+    // 書き込み前に毎回ディスク上の最新版を読み直し、並行する監視プロセスが古いメモリで補完済みデータを上書きしないようにする。
     results = await loadResults();
     const previous = results[item.id];
     const now = new Date().toISOString();
@@ -354,7 +354,7 @@ async function recordLiveResult(item, assessment) {
       likeCount: hasLikeCount ? item.likeCount : previous.likeCount ?? null,
       likeCheckedAt: hasLikeCount ? now : previous.likeCheckedAt ?? null,
       likeAttemptedAt: now,
-      likeRefreshError: hasLikeCount ? null : '商品页未返回いいね数',
+      likeRefreshError: hasLikeCount ? null : '商品ページからいいね数を取得できませんでした',
       itemCondition: item.itemCondition ?? previous.itemCondition ?? null,
       itemConditionLevel: assessment.itemConditionLevel ?? previous.itemConditionLevel ?? null,
       conditionEligible: assessment.conditionEligible,
@@ -385,14 +385,14 @@ async function removeResult(item) {
 }
 
 async function log(message) {
-  const line = `[${new Date().toLocaleString('zh-CN', { hour12: false })}] ${message}`;
+  const line = `[${new Date().toLocaleString('ja-JP', { hour12: false })}] ${message}`;
   console.log(line);
   await appendFile(LOG_FILE, `${line}\n`, 'utf8').catch(() => {});
 }
 
 function notificationBody(item, assessment) {
   const reasonText = assessment.reasons.slice(0, 5).join('、');
-  return `${item.title}\n¥${assessment.price.toLocaleString('ja-JP')}　${assessment.grade}级\n${reasonText}\n\n是否打开商品页面？`;
+  return `${item.title}\n¥${assessment.price.toLocaleString('ja-JP')}　${assessment.grade}ランク\n${reasonText}\n\n商品ページを開きますか？`;
 }
 
 function notify(item, assessment) {
@@ -404,7 +404,7 @@ function notify(item, assessment) {
   ].join(';');
   spawn('powershell.exe', [
     '-NoProfile', '-STA', '-Command', script,
-    `メルカリ高性价比笔记本：${assessment.grade}级`,
+    `メルカリ高コスパノートPC：${assessment.grade}ランク`,
     notificationBody(item, assessment),
     item.url,
   ], { detached: true, windowsHide: false, stdio: 'ignore' }).unref();
@@ -435,7 +435,7 @@ async function maybeNotifyPriceDrop(item, previousPrice, assessment) {
   await saveState();
   notify(item, assessment);
   await recordAlert(item, assessment);
-  await log(`  ↳ 降价提醒：¥${drop.previousPrice.toLocaleString('ja-JP')} → ¥${drop.currentPrice.toLocaleString('ja-JP')}；${item.title}`);
+  await log(`  ↳ 値下げ通知：¥${drop.previousPrice.toLocaleString('ja-JP')} → ¥${drop.currentPrice.toLocaleString('ja-JP')}；${item.title}`);
   return true;
 }
 
@@ -477,37 +477,37 @@ async function refreshResultsMetadata(limit, excludeIds = new Set(), uncheckedMe
       if (detailed.removed || detailed.sold) {
         await removeResult(detailed);
         refreshed += 1;
-        await log(`已剔除失效商品：${detailed.title}（${detailed.unavailableReason}）`);
+        await log(`無効商品を除外しました：${detailed.title}（${detailed.unavailableReason}）`);
         continue;
       }
       const assessment = assessCandidate(detailed, config);
       if (!isAllowedCpu(assessment.cpu)) {
         await removeResult(detailed);
         refreshed += 1;
-        await log(`已剔除不符合CPU条件的商品：${assessment.cpu.label}；${detailed.title}`);
+        await log(`CPU条件に合わない商品を除外しました：${assessment.cpu.label}；${detailed.title}`);
         continue;
       }
       if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
         await removeResult(detailed);
         refreshed += 1;
-        await log(`已剔除商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
+        await log(`商品状態レベル${assessment.itemConditionLevel ?? '不明'}の商品を除外しました：${detailed.title}`);
         continue;
       }
       const rejection = hardFilterMessage(assessment);
       if (rejection) {
         await removeResult(detailed);
         refreshed += 1;
-        await log(`已剔除不符合目标规格的商品：${rejection}；${detailed.title}`);
+        await log(`対象スペックに合わない商品を除外しました：${rejection}；${detailed.title}`);
         continue;
       }
       await recordResult(detailed, assessment);
       refreshed += 1;
-      const likeText = Number.isInteger(detailed.likeCount) ? detailed.likeCount : '无法取得';
-      const conditionText = detailed.itemCondition ?? '无法取得';
-      await log(`补查资料：状态 ${conditionText}；いいね ${likeText}；${detailed.title}`);
+      const likeText = Number.isInteger(detailed.likeCount) ? detailed.likeCount : '取得不可';
+      const conditionText = detailed.itemCondition ?? '取得不可';
+      await log(`資料を補完しました：状態 ${conditionText}；いいね ${likeText}；${detailed.title}`);
     } catch (error) {
       await markMetadataFailure(entry, error);
-      await log(`补查 ${entry.id} 失败：${error.message}`);
+      await log(`${entry.id} の資料補完に失敗：${error.message}`);
     }
   }
   await page.close();
@@ -528,7 +528,7 @@ async function refreshAllLiveResults() {
   let cursor = 0;
   const totals = { checked: 0, changed: 0, removed: 0, filtered: 0, failed: 0, priceDrops: 0 };
   const workerCount = Math.min(config.likesRefreshConcurrency, candidates.length);
-  await log(`开始刷新 ${candidates.length} 件商品的价格、いいね和状态（${workerCount} 路并行）。`);
+  await log(`開始：${candidates.length} 件の商品の価格・いいね・状態を更新します（${workerCount} 並列）。`);
 
   async function worker() {
     const page = await browser.newPage();
@@ -541,24 +541,24 @@ async function refreshAllLiveResults() {
           totals.checked += 1;
           if (detailed.removed || detailed.sold) {
             if (await removeResult(detailed)) totals.removed += 1;
-            await log(`已剔除失效商品：${detailed.title}（${detailed.unavailableReason}）`);
+            await log(`無効商品を除外しました：${detailed.title}（${detailed.unavailableReason}）`);
             continue;
           }
           const assessment = assessCandidate(detailed, config);
           if (!isAllowedCpu(assessment.cpu)) {
             if (await removeResult(detailed)) totals.filtered += 1;
-            await log(`已剔除不符合CPU条件的商品：${assessment.cpu.label}；${detailed.title}`);
+            await log(`CPU条件に合わない商品を除外しました：${assessment.cpu.label}；${detailed.title}`);
             continue;
           }
           if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
             if (await removeResult(detailed)) totals.filtered += 1;
-            await log(`已剔除商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
+            await log(`商品状態レベル${assessment.itemConditionLevel ?? '不明'}の商品を除外しました：${detailed.title}`);
             continue;
           }
           const rejection = hardFilterMessage(assessment);
           if (rejection) {
             if (await removeResult(detailed)) totals.filtered += 1;
-            await log(`已剔除不符合目标规格的商品：${rejection}；${detailed.title}`);
+            await log(`対象スペックに合わない商品を除外しました：${rejection}；${detailed.title}`);
             continue;
           }
           const change = await recordLiveResult(detailed, assessment);
@@ -572,7 +572,7 @@ async function refreshAllLiveResults() {
           }
         } catch (error) {
           totals.failed += 1;
-          await log(`实时资料更新 ${entry.id} 失败：${error.message}`);
+          await log(`リアルタイム資料更新 ${entry.id} 失敗：${error.message}`);
         }
       }
     } finally {
@@ -581,7 +581,7 @@ async function refreshAllLiveResults() {
   }
 
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  await log(`实时资料刷新完成：检查 ${totals.checked} 件，いいね变化 ${totals.changed} 件，失效剔除 ${totals.removed} 件，筛选条件剔除 ${totals.filtered} 件，未取得 ${totals.failed} 件，降价提醒 ${totals.priceDrops} 件。`);
+  await log(`リアルタイム資料更新が完了：確認 ${totals.checked} 件、いいね変化 ${totals.changed} 件、無効除外 ${totals.removed} 件、条件除外 ${totals.filtered} 件、取得不可 ${totals.failed} 件、値下げ通知 ${totals.priceDrops} 件。`);
   return totals;
 }
 
@@ -599,10 +599,10 @@ async function searchQueries(queries, { limit = 60 } = {}) {
         try {
           const items = await readSearch(page, query, { limit });
           results.push({ query, items, ok: true });
-          await log(`搜索“${query}”：读取 ${items.length} 件在售商品`);
+          await log(`「${query}」を検索：販売中商品を ${items.length} 件取得`);
         } catch (error) {
           results.push({ query, items: [], ok: false, error });
-          await log(`搜索“${query}”失败：${error.message}`);
+          await log(`「${query}」の検索に失敗：${error.message}`);
         }
       }
     } finally {
@@ -621,7 +621,7 @@ async function scanOnce() {
   const successfulQueries = allQueryResults.filter((result) => result.ok).length;
   const queryResults = allQueryResults.map((result) => result.items);
 
-  if (!successfulQueries) throw new Error('所有搜索均失败，本轮不更新状态');
+  if (!successfulQueries) throw new Error('すべての検索に失敗したため、今回は状態を更新しません');
   const longestResult = Math.max(0, ...queryResults.map((items) => items.length));
   for (let index = 0; index < longestResult; index += 1) {
     for (const items of queryResults) {
@@ -636,7 +636,7 @@ async function scanOnce() {
     for (const item of allItems) state.seen[item.id] = { seenAt: now, title: item.title, price: item.price };
     state.initialized = true;
     await saveState();
-    await log(`首次运行已建立基线：记录 ${allItems.length} 件当前商品；从下一轮开始只提醒新上架商品。`);
+    await log(`初回実行でベースラインを確立：現在の商品を ${allItems.length} 件記録しました。次回から新規出品のみ通知します。`);
     return;
   }
 
@@ -644,7 +644,7 @@ async function scanOnce() {
     ? allItems.slice(0, config.detailCheckLimit)
     : allItems.filter((item) => !state.seen[item.id]).slice(0, config.detailCheckLimit);
   if (!pending.length) {
-    await log('本轮没有发现新商品。');
+    await log('今回は新しい商品は見つかりませんでした。');
   }
 
   const detailPage = pending.length ? await browser.newPage() : null;
@@ -654,7 +654,7 @@ async function scanOnce() {
       const detailed = await readDetail(detailPage, item);
       if (detailed.removed || detailed.sold) {
         await removeResult(detailed);
-        await log(`已剔除失效商品：${detailed.title}（${detailed.unavailableReason}）`);
+        await log(`無効商品を除外しました：${detailed.title}（${detailed.unavailableReason}）`);
         if (!diagnose) {
           state.seen[item.id] = {
             seenAt: new Date().toISOString(),
@@ -668,7 +668,7 @@ async function scanOnce() {
       const assessment = assessCandidate(detailed, config);
       if (!isAllowedCpu(assessment.cpu)) {
         await removeResult(detailed);
-        await log(`已跳过不符合CPU条件的商品：${assessment.cpu.label}；${detailed.title}`);
+        await log(`CPU条件に合わない商品をスキップしました：${assessment.cpu.label}；${detailed.title}`);
         if (!diagnose) {
           state.seen[item.id] = {
             seenAt: new Date().toISOString(),
@@ -680,7 +680,7 @@ async function scanOnce() {
       }
       if (!isAllowedConditionLevel(assessment.itemConditionLevel)) {
         await removeResult(detailed);
-        await log(`已跳过商品状态第${assessment.itemConditionLevel ?? '未知'}级：${detailed.title}`);
+        await log(`商品状態レベル${assessment.itemConditionLevel ?? '不明'}の商品をスキップしました：${detailed.title}`);
         if (!diagnose) {
           state.seen[item.id] = {
             seenAt: new Date().toISOString(),
@@ -693,7 +693,7 @@ async function scanOnce() {
       const rejection = hardFilterMessage(assessment);
       if (rejection) {
         await removeResult(detailed);
-        await log(`已跳过不符合目标规格的商品：${rejection}；${detailed.title}`);
+        await log(`対象スペックに合わない商品をスキップしました：${rejection}；${detailed.title}`);
         if (!diagnose) {
           state.seen[item.id] = {
             seenAt: new Date().toISOString(),
@@ -703,9 +703,9 @@ async function scanOnce() {
         }
         continue;
       }
-      const priceText = assessment.price === null ? '价格不明' : `¥${assessment.price.toLocaleString('ja-JP')}`;
-      const conditionText = detailed.itemCondition ?? '状态不明';
-      await log(`[${assessment.grade}级] [状态 ${conditionText}] ${priceText} ${detailed.title} ${detailed.url}`);
+      const priceText = assessment.price === null ? '価格不明' : `¥${assessment.price.toLocaleString('ja-JP')}`;
+      const conditionText = detailed.itemCondition ?? '状態不明';
+      await log(`[${assessment.grade}ランク] [状態 ${conditionText}] ${priceText} ${detailed.title} ${detailed.url}`);
       await recordResult(detailed, assessment);
       if (!diagnose) {
         state.seen[item.id] = {
@@ -721,11 +721,11 @@ async function scanOnce() {
           notify(detailed, assessment);
           await recordAlert(detailed, assessment);
         }
-        await log(`  ↳ 符合提醒条件：${assessment.reasons.slice(0, 6).join('、')}`);
+        await log(`  ↳ 通知条件に合致：${assessment.reasons.slice(0, 6).join('、')}`);
       }
     } catch (error) {
-      await log(`读取 ${item.id} 失败：${error.message}`);
-      // 暂时加载失败的商品留到下一轮重试，避免因为网络波动漏报。
+      await log(`${item.id} の読み込みに失敗：${error.message}`);
+      // 一時的に読み込みに失敗した商品は次のラウンドで再試行し、ネットワークの揺らぎによる見逃しを防ぐ。
     }
   }
   if (detailPage) await detailPage.close();
@@ -737,7 +737,7 @@ async function scanOnce() {
   const refreshedCount = diagnose
     ? 0
     : await refreshResultsMetadata(config.metadataRefreshLimit, new Set(pending.map((item) => item.id)), true);
-  await log(`本轮检查 ${pending.length} 件新商品，符合提醒条件 ${alertCount} 件；补查旧记录 ${refreshedCount} 件。`);
+  await log(`今回は新商品 ${pending.length} 件を確認、通知条件合致 ${alertCount} 件；旧記録の補完 ${refreshedCount} 件。`);
 }
 
 async function shutdown() {
@@ -747,13 +747,13 @@ async function shutdown() {
 }
 
 process.on('SIGINT', async () => {
-  await log('收到停止指令，正在关闭。');
+  await log('停止指令を受け取りました。シャットダウンします。');
   await shutdown();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  await log('收到后台停止指令，正在关闭。');
+  await log('バックグラウンド停止指令を受け取りました。シャットダウンします。');
   await shutdown();
   process.exit(0);
 });
@@ -762,22 +762,22 @@ await claimMonitorPid();
 const restoredSeriesSkips = restoreNewlyAllowedSeriesSkips(state, config.allowedSeries);
 if (restoredSeriesSkips.length) {
   await saveState();
-  await log(`已恢复 ${restoredSeriesSkips.length} 件因旧系列规则跳过的商品，等待重新检查。`);
+  await log(`旧シリーズルールでスキップされた ${restoredSeriesSkips.length} 件を復元し、再チェックを待っています。`);
 }
-await setMonitorPhase('正在启动', '正在准备结果页');
+await setMonitorPhase('起動中', '結果ページを準備中');
 await syncResultsPage();
 const startupMessage = pruneInactive
-  ? `失效商品清理模式启动；本次将检查全部 ${Object.keys(results).length} 条结果。`
+  ? `無効商品クリーンモードを開始；今回は全 ${Object.keys(results).length} 件の結果を確認します。`
   : refreshLikes
-    ? `实时资料刷新模式启动；本次将更新全部 ${Object.keys(results).length} 条结果。`
+    ? `リアルタイム資料更新モードを開始；今回は全 ${Object.keys(results).length} 件の結果を更新します。`
     : refreshMetadata
-      ? `资料补查模式启动；本次将复查全部 ${missingMetadataCount()} 条缺少资料的旧记录。`
-      : `${diagnose ? '诊断模式' : '监测器'}启动；每 ${config.pollMinutes} 分钟搜索新品，每 ${config.likesRefreshMinutes} 分钟刷新全部商品资料。`;
+      ? `資料補完モードを開始；今回は資料不足の旧記録 ${missingMetadataCount()} 件を再確認します。`
+      : `${diagnose ? '診断モード' : 'モニター'}を開始；${config.pollMinutes} 分ごとに新商品を検索し、${config.likesRefreshMinutes} 分ごとに全商品資料を更新します。`;
 await log(startupMessage);
-await log('可点击结果页：results.html（双击 open-results.cmd 打开）');
+await log('結果ページを開けます：results.html（open-results.cmd をダブルクリック）');
 try {
   browser = await launchBrowser({ showBrowser, headless: config.headless, log });
-  await setMonitorPhase('正在启动', '浏览器已连接，准备首次检查');
+  await setMonitorPhase('起動中', 'ブラウザ接続完了、初回チェックを準備中');
   do {
     try {
       if (pruneInactive) await refreshResultsMetadata(Number.POSITIVE_INFINITY, new Set(), false);
@@ -786,18 +786,18 @@ try {
       else {
         if (Date.now() >= nextSearchAt) {
           nextSearchAt = Date.now() + config.pollMinutes * 60_000;
-          await setMonitorPhase('正在搜索新品', '正在读取 Mercari 搜索结果');
+          await setMonitorPhase('新商品を検索中', 'Mercari の検索結果を読み込み中');
           await scanOnce();
         }
         if (Date.now() >= nextLikesRefreshAt) {
-          await setMonitorPhase('正在更新商品资料', '正在刷新价格、いいね和状态');
+          await setMonitorPhase('商品資料を更新中', '価格・いいね・状態を更新中');
           await refreshAllLiveResults();
         }
-        await setMonitorPhase('运行中', '等待下一轮检查');
+        await setMonitorPhase('実行中', '次のチェックを待機中');
       }
     } catch (error) {
-      await log(`本轮失败：${error.message}`);
-      await setMonitorPhase('运行中', '上一轮发生错误，稍后自动重试');
+      await log(`今回の処理に失敗：${error.message}`);
+      await setMonitorPhase('実行中', '前回エラーが発生、しばらくして自動再試行します');
     }
     if (once) break;
     const nextWakeAt = Math.min(nextSearchAt, nextLikesRefreshAt);

@@ -1,3 +1,30 @@
+// 内部の理由キー（reasons）は機能上の鍵として中国語のまま保持する。
+// 画面表示時にだけ日文へ変換するための対応表。
+const REASON_JA = {
+  '32GB内存': '32GBメモリ',
+  '512GB存储': '512GBストレージ',
+  '1TB存储': '1TBストレージ',
+  '未确认SSD': 'SSD未確認',
+  '严重故障/锁机风险': '深刻な故障・ロックのリスク',
+  '不是目标Windows笔记本': '対象外のWindowsノートPC',
+  '外观或屏幕有缺陷': '外観・画面に難あり',
+  '有瑕疵说明': '難ありの記載あり',
+  '电池状态较差': 'バッテリー状態が不良',
+  '电池描述较好': 'バッテリー状態が良好',
+  '商务本系列': 'ビジネスシリーズ',
+  '非指定商务系列': '指定外のビジネスシリーズ',
+  '商品状态良好': '商品状態が良好',
+  '价格合理': '価格が妥当',
+};
+
+// reasons を画面表示用の日文に変換する（未知の鍵は原文のまま）。
+function reasonsToJa(reasons) {
+  return (Array.isArray(reasons) ? reasons : []).map((reason) => {
+    if (reason.startsWith('指定系列：')) return `指定シリーズ：${reason.slice('指定系列：'.length).trim()}`;
+    return REASON_JA[reason] ?? reason;
+  });
+}
+
 export function memorySpecConflict(entry) {
   const reasons = Array.isArray(entry?.reasons) ? entry.reasons : [];
   if (!reasons.includes('32GB内存')) return { conflict: false, label: '' };
@@ -11,7 +38,7 @@ export function memorySpecConflict(entry) {
     .map((match) => Number(match[1]));
   const conflictingSize = mentionedSizes[0];
   return Number.isFinite(conflictingSize)
-    ? { conflict: true, label: `标题${conflictingSize}GB / 检测32GB · 需要人工确认` }
+    ? { conflict: true, label: `タイトル${conflictingSize}GB / 検出32GB・要確認` }
     : { conflict: false, label: '' };
 }
 
@@ -37,7 +64,7 @@ export function storageSpecConflict(entry) {
   }
   return {
     conflict: true,
-    label: `标题${titleValue.label} / 检测${detectedValue.label} · 需要人工确认`,
+    label: `タイトル${titleValue.label} / 検出${detectedValue.label}・要確認`,
   };
 }
 
@@ -45,7 +72,7 @@ export function specConfidence(entry) {
   const memoryConflict = memorySpecConflict(entry);
   const storageConflict = storageSpecConflict(entry);
   if (memoryConflict.conflict || storageConflict.conflict) {
-    return { level: 'conflict', label: '规格冲突', detail: memoryConflict.label || storageConflict.label };
+    return { level: 'conflict', label: 'スペック矛盾', detail: memoryConflict.label || storageConflict.label };
   }
 
   const reasons = Array.isArray(entry?.reasons) ? entry.reasons : [];
@@ -53,7 +80,7 @@ export function specConfidence(entry) {
   const storage = detectedStorage(entry);
   const hasSSD = Boolean(storage) && !reasons.includes('未确认SSD');
   if (!hasMemory || !storage || !hasSSD) {
-    return { level: 'unknown', label: '信息不足', detail: '尚未完整确认32GB内存与SSD存储' };
+    return { level: 'unknown', label: '情報不足', detail: '32GBメモリとSSDストレージが未完全確認' };
   }
 
   const title = String(entry?.title ?? '').normalize('NFKC');
@@ -62,9 +89,9 @@ export function specConfidence(entry) {
   const titleStorageValue = titleStorage(entry);
   const titleHasSSD = /ssd/i.test(title);
   if (titleHas32GB && titleStorageValue?.value === storage.value && titleHasSSD) {
-    return { level: 'title', label: '标题确认', detail: '标题与检测结果一致' };
+    return { level: 'title', label: 'タイトル確認', detail: 'タイトルと検出結果が一致' };
   }
-  return { level: 'detail', label: '详情确认', detail: '后台详情已确认，标题未完整写出全部规格' };
+  return { level: 'detail', label: '詳細確認', detail: 'バックグラウンド詳細で確認済み。タイトルに全スペックが未記載' };
 }
 
 export function priceTrend(entry) {
@@ -91,14 +118,14 @@ export function recentChangeBadges(entry, nowMs = Date.now()) {
   };
   const badges = [];
   if (isRecent(entry?.firstSeenAt)) {
-    badges.push({ kind: 'new', label: '新发现', detail: '最近24小时首次发现' });
+    badges.push({ kind: 'new', label: '新着', detail: '直近24時間で初めて発見' });
   }
   const trend = priceTrend(entry);
   if (trend?.delta < 0 && isRecent(trend.changedAt)) {
     badges.push({
       kind: 'price-down',
-      label: '降价',
-      detail: `较前次下降 ¥${Math.abs(trend.delta).toLocaleString('ja-JP')}`,
+      label: '値下げ',
+      detail: `前回より ¥${Math.abs(trend.delta).toLocaleString('ja-JP')} 値下げ`,
     });
   }
   const likes = Array.isArray(entry?.likeHistory)
@@ -109,7 +136,7 @@ export function recentChangeBadges(entry, nowMs = Date.now()) {
     const previousPoint = [...likes].reverse().find((point) => point.value !== currentPoint.value);
     const delta = previousPoint ? currentPoint.value - previousPoint.value : 0;
     if (delta > 0 && isRecent(currentPoint.at)) {
-      badges.push({ kind: 'likes-up', label: `收藏 +${delta}`, detail: `收藏数由 ${previousPoint.value} 增至 ${currentPoint.value}` });
+      badges.push({ kind: 'likes-up', label: `いいね +${delta}`, detail: `いいね数が ${previousPoint.value} から ${currentPoint.value} に増加` });
     }
   }
   return badges;
@@ -141,14 +168,14 @@ export function compactCondition(entry) {
   const level = Number.isInteger(entry?.itemConditionLevel) ? entry.itemConditionLevel : null;
   const labels = {
     1: '新品',
-    2: '近乎未使用',
-    3: '无明显伤污',
+    2: 'ほぼ未使用',
+    3: '目立った傷や汚れなし',
   };
   if (level === null) {
-    const fallback = entry?.conditionCheckedAt ? '无法取得' : '尚未检查';
+    const fallback = entry?.conditionCheckedAt ? '取得不可' : '未チェック';
     return { label: fallback, title: fallback };
   }
-  const original = entry?.itemCondition || '状态名称不明';
+  const original = entry?.itemCondition || '状態名不明';
   return {
     label: `${level}｜${labels[level] ?? original}`,
     title: `${level}｜${original}`,
@@ -158,7 +185,7 @@ export function compactCondition(entry) {
 export function productFacts(entry) {
   const reasons = Array.isArray(entry?.reasons) ? entry.reasons : [];
   const facts = [];
-  if (Number.isInteger(entry?.itemConditionLevel)) facts.push(`状态${entry.itemConditionLevel}`);
+  if (Number.isInteger(entry?.itemConditionLevel)) facts.push(`状態${entry.itemConditionLevel}`);
   if (reasons.includes('32GB内存')) facts.push('32GB');
 
   const storage = reasons.includes('1TB存储')
@@ -169,35 +196,35 @@ export function productFacts(entry) {
   if (storage) facts.push(reasons.includes('未确认SSD') ? storage : `SSD ${storage}`);
 
   const processor = reasons.find((reason) => /^(?:Intel|Ryzen)\b/i.test(reason));
-  if (processor) facts.push(processor);
+  if (processor) facts.push(processor.replace(/^(Intel)\s*第(\d+)代$/, '$1 第$2世代'));
 
   const series = reasons.find((reason) => reason.startsWith('指定系列：'));
   if (series) facts.push(series.slice('指定系列：'.length).trim());
 
   for (const detail of ['电池描述较好', '电池状态较差', '外观或屏幕有缺陷', '严重故障/锁机风险']) {
-    if (reasons.includes(detail)) facts.push(detail);
+    if (reasons.includes(detail)) facts.push(REASON_JA[detail] ?? detail);
   }
   return [...new Set(facts.filter(Boolean))];
 }
 
 export function sortDescription(key, direction) {
   const labels = {
-    grade: '等级',
-    price: '价格',
-    decision: '判断',
-    likes: '收藏数',
-    condition: '商品状态',
-    title: '商品名称',
-    published: '发布时间',
+    grade: 'ランク',
+    price: '価格',
+    decision: '判定',
+    likes: 'いいね数',
+    condition: '商品状態',
+    title: '商品名',
+    published: '出品日時',
   };
-  if (!labels[key]) return '推荐顺序';
-  return `${labels[key]} ${direction === 'asc' ? '从低到高' : '从高到低'}`;
+  if (!labels[key]) return 'おすすめ順';
+  return `${labels[key]} ${direction === 'asc' ? '昇順' : '降順'}`;
 }
 
 export function formatJstShort(value) {
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return { short: '时间不明', full: '时间不明' };
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('zh-CN', {
+  if (!Number.isFinite(timestamp)) return { short: '時刻不明', full: '時刻不明' };
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('ja-JP', {
     timeZone: 'Asia/Tokyo',
     year: 'numeric',
     month: '2-digit',
@@ -226,24 +253,24 @@ export function searchText(entry, priceText, blockerText = '') {
 
 export function primaryBlocker(entry, config = {}) {
   const reasons = Array.isArray(entry?.reasons) ? entry.reasons : [];
-  if (reasons.includes('严重故障/锁机风险')) return '严重故障/锁机风险';
-  if (reasons.includes('不是目标Windows笔记本')) return '非目标Windows笔记本';
+  if (reasons.includes('严重故障/锁机风险')) return '深刻な故障・ロックのリスク';
+  if (reasons.includes('不是目标Windows笔记本')) return '対象外のWindowsノートPC';
   const memoryConflict = memorySpecConflict(entry);
   if (memoryConflict.conflict) return memoryConflict.label;
   const storageConflict = storageSpecConflict(entry);
   if (storageConflict.conflict) return storageConflict.label;
-  if (entry?.shouldAlert === true && entry?.conditionEligible !== false) return '符合提醒';
-  if (!reasons.includes('32GB内存')) return '未确认32GB内存';
+  if (entry?.shouldAlert === true && entry?.conditionEligible !== false) return '通知条件合致';
+  if (!reasons.includes('32GB内存')) return '32GBメモリ未確認';
   if (!reasons.some((reason) => reason === '512GB存储' || reason === '1TB存储')) {
-    return '未确认512GB以上存储';
+    return '512GB以上のストレージ未確認';
   }
-  if (reasons.includes('未确认SSD')) return '未确认SSD';
-  if (!Number.isFinite(entry?.price)) return '价格不明';
+  if (reasons.includes('未确认SSD')) return 'SSD未確認';
+  if (!Number.isFinite(entry?.price)) return '価格不明';
   const maxPriceYen = Number(config.maxPriceYen ?? 70000);
   if (entry.price > maxPriceYen) {
-    return `超预算 ¥${(entry.price - maxPriceYen).toLocaleString('ja-JP')}`;
+    return `予算超過 ¥${(entry.price - maxPriceYen).toLocaleString('ja-JP')}`;
   }
-  return '评分低于提醒线';
+  return 'スコアが通知基準未満';
 }
 
 export function normalizeSearch(value) {
@@ -295,23 +322,24 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
 
   const resultRows = safeEntries.map((entry, orderIndex) => {
     const hasPrice = Number.isFinite(entry.price);
-    const price = hasPrice ? `¥${Number(entry.price).toLocaleString('ja-JP')}` : '价格不明';
+    const price = hasPrice ? `¥${Number(entry.price).toLocaleString('ja-JP')}` : '価格不明';
     const likeCount = Number.isInteger(entry.likeCount)
       ? entry.likeCount.toLocaleString('ja-JP')
-      : entry.likeCheckedAt ? '无法取得' : '尚未检查';
+      : entry.likeCheckedAt ? '取得不可' : '未チェック';
     const likeCheckedMs = Date.parse(entry.likeCheckedAt) || 0;
     const likeFresh = likeCheckedMs > 0
       && nowMs - likeCheckedMs <= Math.max(15, Number(config.likesRefreshMinutes ?? 10) * 2) * 60_000;
     const likeCheckedText = likeCheckedMs
       ? `${formatJstShort(entry.likeCheckedAt).full} JST`
-      : '尚未更新';
-    const likeCellTitle = `收藏数最后更新：${likeCheckedText}（${likeFresh ? '数据新鲜' : '等待后台更新'}）`;
+      : '未更新';
+    const likeCellTitle = `いいね数 最終更新：${likeCheckedText}（${likeFresh ? 'データ新鮮' : 'バックグラウンド更新待ち'}）`;
     const condition = compactCondition(entry);
     const publishedAt = formatJstShort(entry.publishedAt);
     const firstSeenAt = formatJstShort(entry.firstSeenAt);
     const checkedAt = formatJstShort(entry.checkedAt);
+    const reasonsJa = reasonsToJa(entry.reasons).join('、');
     const reasons = Array.isArray(entry.reasons) ? entry.reasons.join('、') : '';
-    const facts = productFacts(entry).join(' ｜ ') || reasons;
+    const facts = productFacts(entry).join(' ｜ ') || reasonsJa;
     const memoryConflict = memorySpecConflict(entry);
     const storageConflict = storageSpecConflict(entry);
     const confidence = specConfidence(entry);
@@ -327,12 +355,12 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     const isWithinBudget = hasPrice && entry.price <= maxPriceYen;
     const priceDetail = hasPrice
       ? isWithinBudget
-        ? '<span class="price-detail is-within">预算内</span>'
+        ? '<span class="price-detail is-within">予算内</span>'
         : `<span class="price-detail is-over">+¥${(entry.price - maxPriceYen).toLocaleString('ja-JP')}</span>`
       : '';
     const trend = priceTrend(entry);
     const trendMarkup = trend
-      ? `<span class="price-trend ${trend.delta < 0 ? 'trend-down' : 'trend-up'}" title="前价 ¥${trend.previous.toLocaleString('ja-JP')}｜${escapeHtml(`${formatJstShort(trend.changedAt).full} JST`)}">${trend.delta < 0 ? '↓' : '↑'}¥${Math.abs(trend.delta).toLocaleString('ja-JP')}</span>`
+      ? `<span class="price-trend ${trend.delta < 0 ? 'trend-down' : 'trend-up'}" title="前回 ¥${trend.previous.toLocaleString('ja-JP')}｜${escapeHtml(`${formatJstShort(trend.changedAt).full} JST`)}">${trend.delta < 0 ? '↓' : '↑'}¥${Math.abs(trend.delta).toLocaleString('ja-JP')}</span>`
       : '';
     const gradeRank = { S: 4, A: 3, B: 2, C: 1 }[entry.grade] ?? 0;
     const decisionRank = shouldAlert ? 2 : memoryConflict.conflict || storageConflict.conflict ? 1 : 0;
@@ -342,16 +370,16 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     const itemId = String(entry.id ?? `row-${orderIndex}`);
     const detailsId = `details-${itemId.replace(/[^a-z0-9_-]/gi, '-')}`;
     const latestPriceHistory = trend
-      ? `前价 ¥${trend.previous.toLocaleString('ja-JP')} → 当前 ¥${trend.current.toLocaleString('ja-JP')}`
-      : '尚无价格变化';
+      ? `前回 ¥${trend.previous.toLocaleString('ja-JP')} → 現在 ¥${trend.current.toLocaleString('ja-JP')}`
+      : '価格変動なし';
     const searchable = searchText(entry, price, blocker);
     return `<tr class="result-row" data-id="${escapeHtml(itemId)}" data-series="${escapeHtml(entry.seriesId ?? '')}" data-changed="${changes.length ? 1 : 0}" data-triage="unseen" data-order="${orderIndex}" data-grade="${gradeRank}" data-price="${hasPrice ? entry.price : ''}" data-decision="${decisionRank}" data-likes="${Number.isInteger(entry.likeCount) ? entry.likeCount : ''}" data-condition="${Number.isInteger(entry.itemConditionLevel) ? entry.itemConditionLevel : ''}" data-title="${escapeHtml(entry.title)}" data-match="${shouldAlert ? 1 : 0}" data-budget="${isWithinBudget ? 1 : 0}" data-new="${isRecent ? 1 : 0}" data-published="${entry.publishedAt ? Date.parse(entry.publishedAt) : ''}" data-search="${escapeHtml(searchable)}">
-      <td class="grade-cell"><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">级</span></td>
+      <td class="grade-cell"><span class="grade grade-${escapeHtml(entry.grade)}">${escapeHtml(entry.grade)}</span><span class="grade-label">ランク</span></td>
       <td class="numeric-cell price-cell"><span class="price-main">${escapeHtml(price)}</span>${priceDetail}${trendMarkup}</td>
       <td class="decision-cell">${decision}</td>
       <td class="numeric-cell like-cell" title="${escapeHtml(likeCellTitle)}"><span>${escapeHtml(likeCount)}</span><span class="freshness-dot ${likeFresh ? 'is-fresh' : 'is-stale'}" aria-hidden="true"></span></td>
       <td class="condition-cell" title="${escapeHtml(condition.title)}">${escapeHtml(condition.label)}</td>
-      <td class="product-cell"><div class="product-title-line">${changeMarkup}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}<span class="external-mark" aria-hidden="true">↗</span></a></div><div class="product-meta"><span class="product-facts" title="${escapeHtml(reasons)}">${escapeHtml(facts)}</span><span class="product-actions"><span class="triage-status">未看</span><button type="button" class="detail-toggle" aria-expanded="false" aria-controls="${escapeHtml(detailsId)}">详情</button></span></div><div id="${escapeHtml(detailsId)}" class="product-details" hidden><div class="detail-grid"><span><strong>规格可信度</strong><span class="confidence confidence-${escapeHtml(confidence.level)}">${escapeHtml(confidence.label)}</span> ${escapeHtml(confidence.detail)}</span><span><strong>完整判断理由</strong>${escapeHtml(reasons || '暂无')}</span><span><strong>原始商品状态</strong>${escapeHtml(entry.itemCondition || '状态不明')}</span><span><strong>时间</strong>首次发现 ${escapeHtml(firstSeenAt.full)} JST ｜ 发布时间 ${escapeHtml(publishedAt.full)} JST ｜ 最后检查 ${escapeHtml(checkedAt.full)} JST</span><span><strong>价格记录</strong>${escapeHtml(latestPriceHistory)}</span></div><div class="triage-controls" role="group" aria-label="设置浏览状态"><span>浏览状态</span><button type="button" class="triage-button" data-triage-action="unseen" aria-pressed="true">未看</button><button type="button" class="triage-button" data-triage-action="watch" aria-pressed="false">关注</button><button type="button" class="triage-button" data-triage-action="ignored" aria-pressed="false">忽略</button></div></div></td>
+      <td class="product-cell"><div class="product-title-line">${changeMarkup}<a class="title" title="${escapeHtml(entry.title)}" href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.title)}<span class="external-mark" aria-hidden="true">↗</span></a></div><div class="product-meta"><span class="product-facts" title="${escapeHtml(reasons)}">${escapeHtml(facts)}</span><span class="product-actions"><span class="triage-status">未確認</span><button type="button" class="detail-toggle" aria-expanded="false" aria-controls="${escapeHtml(detailsId)}">詳細</button></span></div><div id="${escapeHtml(detailsId)}" class="product-details" hidden><div class="detail-grid"><span><strongスペック信頼度</strong><span class="confidence confidence-${escapeHtml(confidence.level)}">${escapeHtml(confidence.label)}</span> ${escapeHtml(confidence.detail)}</span><span><strong>判定理由</strong>${escapeHtml(reasonsJa || 'なし')}</span><span><strong>元の商品状態</strong>${escapeHtml(entry.itemCondition || '状態不明')}</span><span><strong>日時</strong>初回発見 ${escapeHtml(firstSeenAt.full)} JST ｜ 出品日時 ${escapeHtml(publishedAt.full)} JST ｜ 最終確認 ${escapeHtml(checkedAt.full)} JST</span><span><strong>価格履歴</strong>${escapeHtml(latestPriceHistory)}</span></div><div class="triage-controls" role="group" aria-label="閲覧状態を設定"><span>閲覧状態</span><button type="button" class="triage-button" data-triage-action="unseen" aria-pressed="true">未確認</button><button type="button" class="triage-button" data-triage-action="watch" aria-pressed="false">ウォッチ</button><button type="button" class="triage-button" data-triage-action="ignored" aria-pressed="false">無視略</button></div></div></td>
       <td class="date-cell" title="${escapeHtml(`${publishedAt.full} JST`)}">${escapeHtml(publishedAt.short)}</td>
     </tr>`;
   }).join('\n');

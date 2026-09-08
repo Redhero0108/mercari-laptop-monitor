@@ -23,8 +23,8 @@ export function taskId(keyword) {
 
 function normalizeKeyword(keyword) {
   const normalized = String(keyword ?? '').normalize('NFKC').trim();
-  if (!normalized) throw new CliError('KEYWORD_REQUIRED', '关键词不能为空');
-  if (normalized.length > 200) throw new CliError('KEYWORD_TOO_LONG', '关键词不能超过200个字符');
+  if (!normalized) throw new CliError('KEYWORD_REQUIRED', 'キーワードを入力してください');
+  if (normalized.length > 200) throw new CliError('KEYWORD_TOO_LONG', 'キーワードは200文字以内で入力してください');
   return normalized;
 }
 
@@ -38,11 +38,11 @@ function taskFromKeyword(keyword) {
 
 function findTaskIndex(queries, input) {
   const needle = normalizeKeywordForCompare(input);
-  if (!needle) throw new CliError('TASK_REQUIRED', '任务ID或完整关键词不能为空');
+  if (!needle) throw new CliError('TASK_REQUIRED', 'タスクIDまたは完全なキーワードを指定してください');
   const matches = queries.map((keyword, index) => ({ keyword, index }))
     .filter(({ keyword }) => taskId(keyword) === input || normalizeKeywordForCompare(keyword) === needle);
-  if (!matches.length) throw new CliError('TASK_NOT_FOUND', `找不到监控任务：${input}`);
-  if (matches.length > 1) throw new CliError('TASK_AMBIGUOUS', `监控任务不唯一：${input}`);
+  if (!matches.length) throw new CliError('TASK_NOT_FOUND', `監視タスクが見つかりません：${input}`);
+  if (matches.length > 1) throw new CliError('TASK_AMBIGUOUS', `監視タスクが一意ではありません：${input}`);
   return matches[0].index;
 }
 
@@ -71,7 +71,7 @@ export function errorEnvelope(command, error) {
     command,
     error: {
       code: error?.code || 'UNEXPECTED_ERROR',
-      message: error?.message || '发生未知错误',
+      message: error?.message || '不明なエラーが発生しました',
       ...(error?.details === undefined ? {} : { details: error.details }),
     },
     meta: { schemaVersion: JSON_SCHEMA_VERSION, cliVersion: CLI_VERSION },
@@ -82,8 +82,8 @@ export async function readJson(filePath, missingCode = 'FILE_NOT_FOUND') {
   try {
     return JSON.parse(await readFile(filePath, 'utf8'));
   } catch (error) {
-    if (error.code === 'ENOENT') throw new CliError(missingCode, `找不到文件：${filePath}`);
-    if (error instanceof SyntaxError) throw new CliError('INVALID_JSON', `JSON格式无效：${filePath}`);
+    if (error.code === 'ENOENT') throw new CliError(missingCode, `ファイルが見つかりません：${filePath}`);
+    if (error instanceof SyntaxError) throw new CliError('INVALID_JSON', `JSON形式が無効です：${filePath}`);
     throw error;
   }
 }
@@ -138,7 +138,7 @@ export async function updateKeyword(appDir, target, keyword, { dryRun = false } 
   const duplicateIndex = queries.findIndex((item, itemIndex) => itemIndex !== index
     && normalizeKeywordForCompare(item) === normalizeKeywordForCompare(normalized));
   if (duplicateIndex >= 0) {
-    throw new CliError('DUPLICATE_KEYWORD', `关键词已由另一项监控：${queries[duplicateIndex]}`, {
+    throw new CliError('DUPLICATE_KEYWORD', `キーワードは別の監視タスクで使用されています：${queries[duplicateIndex]}`, {
       task: taskFromKeyword(queries[duplicateIndex]),
     });
   }
@@ -167,7 +167,7 @@ export async function removeKeyword(appDir, target, { dryRun = false } = {}) {
 
 export async function clearKeywords(appDir, { dryRun = false, confirmed = false } = {}) {
   if (!dryRun && !confirmed) {
-    throw new CliError('CONFIRMATION_REQUIRED', '清空全部关键词必须加--yes；可先用--dry-run预览');
+    throw new CliError('CONFIRMATION_REQUIRED', '全キーワードをクリアするには --yes が必要です。事前に --dry-run で確認できます');
   }
   const { configPath, config, queries } = await readKeywordConfig(appDir);
   const removedTasks = queries.map(taskFromKeyword);
@@ -186,18 +186,18 @@ export async function clearKeywords(appDir, { dryRun = false, confirmed = false 
 
 export async function replaceAllKeywords(appDir, keywords, { dryRun = false, confirmed = false } = {}) {
   if (!Array.isArray(keywords) || !keywords.length) {
-    throw new CliError('KEYWORDS_REQUIRED', 'replace-all至少需要一个--keyword');
+    throw new CliError('KEYWORDS_REQUIRED', 'replace-all には --keyword が1つ以上必要です');
   }
-  if (keywords.length > 100) throw new CliError('TOO_MANY_KEYWORDS', '一次最多设置100个关键词');
+  if (keywords.length > 100) throw new CliError('TOO_MANY_KEYWORDS', 'キーワードは一度に最大100個まで設定できます');
   if (!dryRun && !confirmed) {
-    throw new CliError('CONFIRMATION_REQUIRED', '替换全部关键词必须加--yes；可先用--dry-run预览');
+    throw new CliError('CONFIRMATION_REQUIRED', '全キーワードを置き換えるには --yes が必要です。事前に --dry-run で確認できます');
   }
   const normalizedKeywords = keywords.map(normalizeKeyword);
   const seen = new Map();
   for (const keyword of normalizedKeywords) {
     const normalized = normalizeKeywordForCompare(keyword);
     if (seen.has(normalized)) {
-      throw new CliError('DUPLICATE_KEYWORD', `批量关键词存在重复：${keyword}`);
+      throw new CliError('DUPLICATE_KEYWORD', `キーワードが重複しています：${keyword}`);
     }
     seen.set(normalized, keyword);
   }
@@ -252,7 +252,7 @@ export function normalizeResult(entry) {
 export async function recentResults(appDir, limit = 20) {
   const boundedLimit = Number(limit);
   if (!Number.isInteger(boundedLimit) || boundedLimit < 1 || boundedLimit > 200) {
-    throw new CliError('INVALID_LIMIT', '--limit必须是1到200之间的整数');
+    throw new CliError('INVALID_LIMIT', '--limit は1〜200の整数で指定してください');
   }
   const parsed = await readJson(path.join(appDir, 'results.json'), 'RESULTS_NOT_FOUND');
   const entries = Object.values(parsed && typeof parsed === 'object' ? parsed : {})
@@ -266,7 +266,7 @@ export async function getResult(appDir, input) {
   const parsed = await readJson(path.join(appDir, 'results.json'), 'RESULTS_NOT_FOUND');
   const id = String(input ?? '').match(/m\d+/)?.[0] ?? String(input ?? '');
   const entry = parsed?.[id];
-  if (!entry) throw new CliError('RESULT_NOT_FOUND', `找不到商品结果：${input}`);
+  if (!entry) throw new CliError('RESULT_NOT_FOUND', `商品の結果が見つかりません：${input}`);
   return normalizeResult(entry);
 }
 
@@ -354,7 +354,7 @@ export function runProcess(file, args, { cwd, timeoutMs = 15 * 60_000, onStart }
       clearTimeout(timer);
       const finishedAtMs = Date.now();
       if (timedOut) {
-        reject(new CliError('CHECK_TIMEOUT', `检查超过${Math.round(timeoutMs / 1000)}秒，已停止等待`));
+        reject(new CliError('CHECK_TIMEOUT', `チェックが${Math.round(timeoutMs / 1000)}秒を超えたため、待機を停止しました`));
         return;
       }
       const result = {
@@ -366,7 +366,7 @@ export function runProcess(file, args, { cwd, timeoutMs = 15 * 60_000, onStart }
         stderr,
       };
       if (exitCode !== 0) {
-        reject(new CliError('MONITOR_FAILED', `监控脚本退出，代码${exitCode}`, {
+        reject(new CliError('MONITOR_FAILED', `監視スクリプトが終了しました（コード${exitCode}）`, {
           exitCode,
           stderrTail: stderr.split(/\r?\n/).filter(Boolean).slice(-20),
         }));
