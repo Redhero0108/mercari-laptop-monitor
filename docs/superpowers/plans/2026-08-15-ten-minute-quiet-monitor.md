@@ -1,24 +1,24 @@
-# Ten-Minute Quiet Monitor Implementation Plan
+# 10分の静かな監視 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **エージェントワーカー向け:** 必須サブスキル: superpowers:subagent-driven-development（推奨）または superpowers:executing-plans を使って、この計画をタスク単位で実装してください。手順はチェックボックス（`- [ ]`）構文で追跡します。
 
-**Goal:** Make `open-results.cmd` launch the hidden monitor and results page while all Mercari checks and page reloads run at ten-minute intervals without high-frequency status polling or heartbeat writes.
+**目標:** `open-results.cmd` が隠しモニターと結果ページを起動し、すべてのMercariチェックとページ再読み込みを10分間隔で実行するようにし、高頻度の状態ポーリングやハートビート書き込みを行わないようにする。
 
-**Architecture:** Keep the existing idempotent hidden PowerShell launcher and static HTML results page. Change the shared runtime configuration to ten minutes, render a 600-second page reload, load monitor status only once per page load, and remove the monitor's standalone heartbeat timer so the process is idle between scheduled checks.
+**アーキテクチャ:** 既存の冪等な隠しPowerShellランチャーと静的HTML結果ページを維持する。共有ランタイム設定を10分に変更し、600秒のページ再読み込みを描画し、モニター状態をページ読み込みごとに1回だけ読み込み、モニターの単独ハートビートタイマーを削除して、スケジュールチェックの合間はプロセスをアイドルにする。
 
-**Tech Stack:** Node.js ES modules, static HTML/CSS/JavaScript, Windows PowerShell 5.1, CMD, Node built-in test assertions.
+**テックスタック:** Node.js ES modules、静的HTML/CSS/JavaScript、Windows PowerShell 5.1、CMD、Node組み込みテストアサーション。
 
-## Global Constraints
+## グローバル制約
 
-- Windows and PowerShell remain the supported runtime.
-- No new dependencies and no changes to product filters, notification rules, or stored result formats.
-- Search, live-product refresh, and page reload intervals must all be exactly 10 minutes.
-- `open-results.cmd` must remain a single double-click entry point and must not create duplicate monitors.
-- The page must not perform a 10-second status poll, and the monitor must not write heartbeat files while waiting.
+- WindowsとPowerShellがサポート対象のランタイムのまま。
+- 新規依存なし、商品フィルター・通知ルール・保存結果形式への変更なし。
+- 検索・ライブ商品更新・ページ再読み込みの間隔はすべて正確に10分。
+- `open-results.cmd` は単一のダブルクリック入口のままで、モニターを重複作成しない。
+- ページは10秒の状態ポーリングを行わず、モニターは待機中にハートビートファイルを書き込まない。
 
 ---
 
-### Task 1: Lock the ten-minute behavior with failing tests
+### Task 1: 失敗テストで10分挙動を固定
 
 **Files:**
 - Create: `test-runtime-intervals.mjs`
@@ -26,36 +26,36 @@
 - Modify: `package.json`
 
 **Interfaces:**
-- Consumes: `renderResultsPage(entries, config, options)` from `results-page.mjs`.
-- Produces: regression coverage for page reload markup, status polling removal, runtime configuration, and heartbeat timer removal.
+- Consumes: `renderResultsPage(entries, config, options)`（`results-page.mjs` から）。
+- Produces: ページ再読み込みマークアップ・状態ポーリング削除・ランタイム設定・ハートビートタイマー削除の回帰カバレッジ。
 
-- [ ] **Step 1: Write the failing page-rendering assertions**
+- [ ] **Step 1: 失敗するページ描画アサーションを書く**
 
-Add assertions after `rendered` is created:
+`rendered` 作成後にアサーションを追加：
 
 ```js
 assert.match(rendered, /<meta http-equiv="refresh" content="600">/);
-assert.match(rendered, /页面每10分钟刷新/);
+assert.match(rendered, /10分ごとに自動更新/);
 assert.match(rendered, /refreshMonitorStatus\(\);/);
 assert.doesNotMatch(rendered, /setInterval\(refreshMonitorStatus/);
 ```
 
-- [ ] **Step 2: Create the runtime interval regression test**
+- [ ] **Step 2: ランタイム間隔の回帰テストを作成**
 
-Create `test-runtime-intervals.mjs` that reads `config.json` and `monitor.mjs`, asserts `pollMinutes === 10`, `likesRefreshMinutes === 10`, verifies the monitor default and fallback are 10, and rejects `setInterval` inside `startHeartbeat`.
+`config.json` と `monitor.mjs` を読み、`pollMinutes === 10`・`likesRefreshMinutes === 10` を検証し、モニターの既定値とフォールバックが10であることを確認し、`startHeartbeat` 内の `setInterval` を拒否する `test-runtime-intervals.mjs` を作成する。
 
-- [ ] **Step 3: Register and run the focused tests to verify failure**
+- [ ] **Step 3: 対象テストを登録して失敗を確認**
 
-Add `node test-runtime-intervals.mjs` to the `test` script, then run:
+`test` スクリプトに `node test-runtime-intervals.mjs` を追加し、次を実行：
 
 ```powershell
 node .\test-results-page.mjs
 node .\test-runtime-intervals.mjs
 ```
 
-Expected: at least the 600-second page refresh assertion and `pollMinutes === 10` assertion fail against the existing implementation.
+Expected: 少なくとも600秒のページ再読み込みアサーションと `pollMinutes === 10` のアサーションが既存実装に対して失敗する。
 
-### Task 2: Implement quiet ten-minute scheduling
+### Task 2: 静かな10分スケジューリングを実装
 
 **Files:**
 - Modify: `config.json`
@@ -64,26 +64,26 @@ Expected: at least the 600-second page refresh assertion and `pollMinutes === 10
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: existing `config.pollMinutes`, `config.likesRefreshMinutes`, `setMonitorPhase()`, and page renderer.
-- Produces: ten-minute search/live refresh scheduling and a page that reloads and reads status once every ten minutes.
+- Consumes: 既存の `config.pollMinutes`、`config.likesRefreshMinutes`、`setMonitorPhase()`、ページレンダラー。
+- Produces: 10分の検索/ライブ更新スケジューリングと、10分ごとに再読み込み・状態読み込みを行うページ。
 
-- [ ] **Step 1: Update runtime intervals**
+- [ ] **Step 1: ランタイム間隔を更新**
 
-Set `config.json` `pollMinutes` to `10`. In `monitor.mjs`, change the default and invalid-value fallback for `pollMinutes` from `5` to `10` while retaining the existing minimum validation.
+`config.json` の `pollMinutes` を `10` に設定。`monitor.mjs` で `pollMinutes` の既定値と無効値フォールバックを `5` から `10` に変更しつつ、既存の最小値バリデーションは維持。
 
-- [ ] **Step 2: Remove the monitor heartbeat timer**
+- [ ] **Step 2: モニターのハートビートタイマーを削除**
 
-Delete `heartbeatTimer`, `startHeartbeat()`, and its invocation. Keep status writes in `setMonitorPhase()` and make `stopHeartbeat()` only write the stopped state so shutdown behavior remains compatible.
+`heartbeatTimer`・`startHeartbeat()`・その呼び出しを削除。状態書き込みは `setMonitorPhase()` に残し、`stopHeartbeat()` は停止状態のみ書き込むようにして、シャットダウン動作の互換性を維持。
 
-- [ ] **Step 3: Update the generated page**
+- [ ] **Step 3: 生成ページを更新**
 
-Change the meta refresh to `600`, update the hint to say both page and backend refresh every ten minutes, change the stale-status threshold to 15 minutes, keep the single `refreshMonitorStatus()` call, and remove its `setInterval` call.
+meta refresh を `600` に変更し、ヒントにページとバックエンドの両方が10分ごとに更新されると記載し、状態切れしきい値を15分に変更し、`refreshMonitorStatus()` の呼び出しは1回のまま、`setInterval` 呼び出しは削除。
 
-- [ ] **Step 4: Update operating documentation**
+- [ ] **Step 4: 運用ドキュメントを更新**
 
-Change README references from five-minute search/page refresh to ten minutes, document that the status file is read once per page load, and explain that the hidden process stays idle between checks.
+README の5分の検索/ページ更新記述を10分に変更し、状態ファイルがページ読み込みごとに1回だけ読まれること、隠しプロセスがチェック間はアイドルであることを記載。
 
-- [ ] **Step 5: Run focused tests and commit**
+- [ ] **Step 5: 対象テストを実行してコミット**
 
 Run:
 
@@ -93,36 +93,36 @@ node .\test-runtime-intervals.mjs
 node .\test-powershell.mjs
 ```
 
-Expected: all three commands print their `OK` messages and exit 0.
+Expected: 3コマンドすべてがそれぞれの `OK` を表示し exit 0。
 
-Commit the implementation and tests together with message `feat: 十分钟静默刷新监控`.
+実装とテストをまとめて、message `feat: 十分钟静默刷新监控` でコミット。
 
-### Task 3: Verify the generated artifact and restart the hidden monitor
+### Task 3: 生成物を検証して隠しモニターを再起動
 
 **Files:**
 - Runtime-only: `results.html`, `monitor.pid`, `monitor-status.js`, `monitor.log`
 
 **Interfaces:**
-- Consumes: `stop-background.ps1`, `start-background.ps1`, and the updated renderer.
-- Produces: one running monitor using the new ten-minute settings and a freshly generated results page.
+- Consumes: `stop-background.ps1`、`start-background.ps1`、更新済みレンダラー。
+- Produces: 新しい10分設定を使う1つの実行中モニターと、新しく生成された結果ページ。
 
-- [ ] **Step 1: Run the complete verification suite**
+- [ ] **Step 1: 完全な検証スイートを実行**
 
 ```powershell
 npm test
 npm run check
 ```
 
-Expected: all tests pass and every listed JavaScript file passes syntax checking.
+Expected: すべてのテストが成功し、記載されたJavaScriptファイルがすべて構文チェックを通過。
 
-- [ ] **Step 2: Restart only the project monitor**
+- [ ] **Step 2: プロジェクトのモニターのみ再起動**
 
-Run `stop-background.ps1`, verify the PID recorded by this project is no longer active, then run `start-background.ps1`. Do not stop unrelated Node or PowerShell processes.
+`stop-background.ps1` を実行し、このプロジェクトが記録した PID が動作していないことを確認してから `start-background.ps1` を実行。無関係なNode/PowerShellプロセスは停止しない。
 
-- [ ] **Step 3: Verify the runtime output**
+- [ ] **Step 3: ランタイム出力を検証**
 
-Wait only for the initial page generation, then assert that `results.html` contains `content="600"`, does not contain `setInterval(refreshMonitorStatus`, and that `monitor-status.js` records one active PID. Confirm `monitor.log` reports ten-minute search and live-data refresh intervals.
+初期ページ生成だけを待ち、`results.html` に `content="600"` が含まれ、`setInterval(refreshMonitorStatus` が含まれず、`monitor-status.js` が1つのアクティブ PID を記録していることを検証。`monitor.log` が10分の検索・ライブデータ更新間隔を報告していることを確認。
 
-- [ ] **Step 4: Check repository scope**
+- [ ] **Step 4: リポジトリ範囲を確認**
 
-Run `git status --short` and `git diff --check`. Only the intended source, test, README, and plan files may be changed; runtime artifacts remain ignored.
+`git status --short` と `git diff --check` を実行。意図したソース・テスト・README・計画ファイルのみ変更され、ランタイム生成物は無視されたままであること。

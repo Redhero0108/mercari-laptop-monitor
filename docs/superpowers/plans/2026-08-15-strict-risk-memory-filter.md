@@ -1,23 +1,23 @@
-# Strict Risk and Memory Filter Implementation Plan
+# 厳格なリスク・メモリフィルター 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **エージェントワーカー向け:** 必須サブスキル: superpowers:subagent-driven-development（推奨）または superpowers:executing-plans を使って、この計画をタスク単位で実装してください。手順はチェックボックス（`- [ ]`）構文で追跡します。
 
-**Goal:** 彻底剔除标题仅为 16GB/可升级 32GB，以及存在外观屏幕缺陷、严重故障或锁机风险的商品。
+**目標:** タイトルが16GBのみ／32GBへ増設可能なだけの商品と、外観・画面の欠陥や深刻な故障・ロックのリスクがある商品を完全に除外する。
 
-**Architecture:** 在 `laptop-filters.mjs` 中集中实现纯标题判断和风险判断，并让新商品写入前的 `hardFilterFailure` 与已有结果的 `resultMatchesHardFilters` 共用这些规则。`monitor.mjs` 只负责把商品标题传入中央过滤器并展示明确的剔除日志。
+**アーキテクチャ:** `laptop-filters.mjs` に、純粋なタイトル判定とリスク判定を集中的に実装し、新規商品を書き込む前の `hardFilterFailure` と既存結果の `resultMatchesHardFilters` が同じルールを使うようにする。`monitor.mjs` は商品タイトルを中央フィルターへ渡し、明確な除外ログを表示するだけにする。
 
-**Tech Stack:** Node.js ESM、内置 `node:assert/strict`、PowerShell、现有 Mercari monitor。
+**テックスタック:** Node.js ESM、組み込み `node:assert/strict`、PowerShell、既存 Mercari monitor。
 
-## Global Constraints
+## グローバル制約
 
-- 保留明确 `32GB`、`16GB×2`、`16GBx2`、`16GB*2`、`16GB+16GB` 的商品。
-- 剔除单独 `16GB` 或当前 16GB 但描述可升级到 32GB 的商品。
-- 剔除理由含“外观或屏幕有缺陷”或“严重故障/锁机风险”的商品。
-- 不增加依赖、后台进程或检查频率；继续保持单进程和 10 分钟周期。
+- 明示的な `32GB`・`16GB×2`・`16GBx2`・`16GB*2`・`16GB+16GB` の商品は保持する。
+- 単独 `16GB`、または現在16GBで32GBへ増設可能と説明された商品は除外する。
+- 理由に「外观或屏幕有缺陷」または「严重故障/锁机风险」を含む商品は除外する。
+- 依存・バックグラウンドプロセス・チェック頻度は追加しない。単一プロセスと10分周期を維持する。
 
 ---
 
-### Task 1: 中央硬过滤规则
+### Task 1: 中央ハードフィルタールール
 
 **Files:**
 - Modify: `test-laptop-filters.mjs`
@@ -28,27 +28,27 @@
 - Extends: `hardFilterFailure(assessment, maxResultPriceYen, title): null | 'series' | 'memory' | 'storage' | 'ssd' | 'price' | 'risk'`
 - Extends: `resultMatchesHardFilters(entry, allowedSeries, maxResultPriceYen): boolean`
 
-- [ ] **Step 1: Write failing tests for title memory and risk rejection**
+- [ ] **Step 1: タイトルのメモリ・リスク拒否の失敗テストを書く**
 
-Add assertions proving that plain 16GB and upgradeable 16GB are rejected, explicit 32GB and two 16GB modules pass, and both risk reasons are rejected by the assessment and persisted-result paths.
+単独16GBと増設可16GBが拒否され、明示的な32GBと16GB×2モジュールが通過し、両方のリスク理由が評価・永続化結果の両パスで拒否されることを示すアサーションを追加する。
 
-- [ ] **Step 2: Run the focused test and verify RED**
-
-Run: `node .\test-laptop-filters.mjs`
-
-Expected: FAIL because the new title helper and strict rejection behavior do not exist.
-
-- [ ] **Step 3: Implement the minimal centralized rules**
-
-Normalize titles with the existing `compact` helper. Detect explicit total 32GB before treating a standalone 16GB token as disallowed. Add a risk-reason predicate and reuse both predicates from `hardFilterFailure` and `resultMatchesHardFilters`.
-
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [ ] **Step 2: 対象テストを実行して RED を確認**
 
 Run: `node .\test-laptop-filters.mjs`
 
-Expected: `laptop filter tests: OK`.
+Expected: 新しいタイトルヘルパーと厳格な拒否動作が存在しないため失敗する。
 
-### Task 2: Monitor integration and live cleanup
+- [ ] **Step 3: 最小の集中ルールを実装**
+
+既存の `compact` ヘルパーでタイトルを正規化する。単独16GBトークンを拒否として扱う前に、明示的な合計32GBを検出する。リスク理由の述語を追加し、`hardFilterFailure` と `resultMatchesHardFilters` の両方で同じ述語を再利用する。
+
+- [ ] **Step 4: 対象テストを実行して GREEN を確認**
+
+Run: `node .\test-laptop-filters.mjs`
+
+Expected: `laptop filter tests: OK`。
+
+### Task 2: モニター統合とライブ掃除
 
 **Files:**
 - Modify: `monitor.mjs`
@@ -56,27 +56,27 @@ Expected: `laptop filter tests: OK`.
 
 **Interfaces:**
 - Consumes: `hardFilterFailure(assessment, maxResultPriceYen, title)`
-- Produces: one consistent rejection decision for metadata refresh, live refresh and new search results.
+- Produces: メタデータ更新・ライブ更新・新規検索結果で一貫した拒否判定。
 
-- [ ] **Step 1: Pass each item title into the hard-filter decision**
+- [ ] **Step 1: 各商品タイトルをハードフィルター判定へ渡す**
 
-Change `hardFilterMessage` to accept `title`, add a `risk` log message, and pass `detailed.title` or `item.title` at all three call sites before any result is recorded or alerted.
+`hardFilterMessage` が `title` を受け取り、`risk` ログメッセージを追加し、結果を記録・通知する前の3箇所すべてで `detailed.title` または `item.title` を渡すよう変更する。
 
-- [ ] **Step 2: Run full automated verification**
+- [ ] **Step 2: 完全な自動検証を実行**
 
 Run: `npm test`
 
-Expected: all suites print `OK` and exit 0.
+Expected: すべてのスイートが `OK` を表示し exit 0。
 
 Run: `npm run check`
 
-Expected: all `node --check` commands exit 0.
+Expected: すべての `node --check` コマンドが exit 0。
 
-- [ ] **Step 3: Apply the rule to current results without adding a persistent process**
+- [ ] **Step 3: 常駐プロセスを追加せずに現在の結果へルールを適用**
 
-Run one bounded `mercari-watch --json check`, then verify that `results.json` contains no disallowed title or risk reason and that exactly one persistent `monitor.mjs` process remains.
+上限付きの `mercari-watch --json check` を1回実行し、`results.json` に不許可タイトルやリスク理由が含まれず、常駐 `monitor.mjs` プロセスがちょうど1つ残ることを確認する。
 
-- [ ] **Step 4: Commit the implementation**
+- [ ] **Step 4: 実装をコミット**
 
 ```powershell
 git add -- laptop-filters.mjs test-laptop-filters.mjs monitor.mjs

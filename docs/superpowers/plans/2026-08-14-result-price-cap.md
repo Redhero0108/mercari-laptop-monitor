@@ -1,35 +1,35 @@
-# Mercari Result Price Cap Implementation Plan
+# Mercari 結果価格上限 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **エージェントワーカー向け:** 必須サブスキル: superpowers:subagent-driven-development（推奨）または superpowers:executing-plans を使って、この計画をタスク単位で実装してください。手順はチェックボックス（`- [ ]`）構文で追跡します。
 
-**Goal:** 将价格达到或超过 100,000 日元的 Mercari 商品从提醒、结果数据和网页列表中自动剔除。
+**目標:** 価格が 100,000 円以上になった Mercari 商品を、通知・結果データ・Web一覧から自動的に除外する。
 
-**Architecture:** 保留 `maxPriceYen: 95000` 作为提醒线，新增 `maxResultPriceYen: 99999` 作为结果硬上限。扩展现有 `laptop-filters.mjs` 的统一硬过滤接口，让新品、旧记录、实时刷新和页面重建共享同一价格判断，避免各路径规则不一致。
+**アーキテクチャ:** `maxPriceYen: 95000` を通知ラインとして残し、`maxResultPriceYen: 99999` を結果のハード上限として新設する。既存の `laptop-filters.mjs` の統一ハードフィルターインターフェースを拡張し、新規商品・旧記録・リアルタイム更新・ページ再構築が同じ価格判定を共有して、各パスの規則が食い違わないようにする。
 
-**Tech Stack:** Node.js ES modules、内置 `node:assert`、PowerShell、全局 `mercari-watch` CLI。
+**テックスタック:** Node.js ES modules、組み込み `node:assert`、PowerShell、グローバル `mercari-watch` CLI。
 
-## Global Constraints
+## グローバル制約
 
-- 价格 `99,999` 日元及以下允许进入结果；价格 `100,000` 日元及以上必须剔除。
-- 价格未知不因本规则单独删除，但不能达到现有提醒条件。
-- `maxPriceYen: 95000` 保持不变。
-- 五个商务系列、32GB、512GB SSD、Intel 12代以上、商品状态1～3、JUNK和已售剔除规则保持不变。
-- 程序只读取公开商品，不购买、不收藏、不联系卖家。
-- 保持 Windows 10 和 PowerShell 兼容，不增加依赖。
+- 価格 `99,999` 円以下は結果への掲載を許可。価格 `100,000` 円以上は必ず除外。
+- 価格不明は本ルール単独では削除しないが、既存の通知条件には到達できない。
+- `maxPriceYen: 95000` は変更しない。
+- 5つのビジネスシリーズ・32GB・512GB SSD・Intel第12世代以上・商品状態1〜3・JUNK・売却済み除外の規則は変更しない。
+- プログラムは公開商品の読み取りのみで、購入・いいね・出品者への連絡はしない。
+- Windows 10とPowerShell互換を維持し、依存を増やさない。
 
 ---
 
-### Task 1: 扩展统一硬过滤规则
+### Task 1: 統一ハードフィルタールールの拡張
 
 **Files:**
 - Modify: `test-laptop-filters.mjs`
 - Modify: `laptop-filters.mjs`
 
 **Interfaces:**
-- Consumes: `assessment.price`、持久化结果的 `entry.price`、数值型 `maxResultPriceYen`。
-- Produces: `hardFilterFailure(assessment, maxResultPriceYen)` 在超价时返回 `'price'`；`resultMatchesHardFilters(entry, allowedSeries, maxResultPriceYen)` 对新旧结果使用相同边界。
+- Consumes: `assessment.price`・永続化結果の `entry.price`・数値型 `maxResultPriceYen`。
+- Produces: `hardFilterFailure(assessment, maxResultPriceYen)` が超過時に `'price'` を返す。`resultMatchesHardFilters(entry, allowedSeries, maxResultPriceYen)` が新旧結果で同じ境界を使う。
 
-- [ ] **Step 1: 写入价格边界失败测试**
+- [ ] **Step 1: 価格境界の失敗テストを書く**
 
 ```js
 assert.equal(filters.hardFilterFailure({ ...eligibleAssessment, price: 99999 }, 99999), null);
@@ -46,34 +46,34 @@ assert.equal(filters.resultMatchesHardFilters({
 }, allowedSeries, 99999), false);
 ```
 
-- [ ] **Step 2: 运行测试并确认按预期失败**
+- [ ] **Step 2: テストを実行し、意図どおり失敗することを確認**
 
 Run: `node test-laptop-filters.mjs`
 
-Expected: `100000` 日元用例得到 `null` 或高价旧结果得到 `true`，证明价格规则尚未实现。
+Expected: `100000` 円のケースで `null` が返る、または高額旧結果が `true` を返すなど、価格ルールが未実装であることを示す。
 
-- [ ] **Step 3: 实现最小价格判断**
+- [ ] **Step 3: 最小の価格判定を実装**
 
-在 `hardFilterFailure` 的现有系列、内存、容量、SSD判断之后加入：
+`hardFilterFailure` の既存のシリーズ・メモリ・容量・SSD判定の後に追加：
 
 ```js
 if (Number.isFinite(assessment?.price) && assessment.price > maxResultPriceYen) return 'price';
 ```
 
-在 `resultMatchesHardFilters` 中计算并合并：
+`resultMatchesHardFilters` で計算して統合：
 
 ```js
 const priceEligible = !Number.isFinite(entry?.price) || entry.price <= maxResultPriceYen;
 return seriesEligible && has32GB && has512GB && hasSSD && priceEligible;
 ```
 
-- [ ] **Step 4: 运行聚焦测试并确认通过**
+- [ ] **Step 4: 対象テストを実行して通過を確認**
 
 Run: `node test-laptop-filters.mjs`
 
 Expected: `laptop filter tests: OK`
 
-### Task 2: 接入监控配置和所有处理路径
+### Task 2: 監視設定とすべての処理パスへの組み込み
 
 **Files:**
 - Modify: `monitor.mjs`
@@ -81,78 +81,78 @@ Expected: `laptop filter tests: OK`
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: Task 1 的两个扩展函数以及 `config.maxResultPriceYen`。
-- Produces: 新品、旧记录补查、实时刷新、结果页重建均剔除价格达到10万日元的商品。
+- Consumes: Task 1 の2つの拡張関数と `config.maxResultPriceYen`。
+- Produces: 新規商品・旧記録補完・リアルタイム更新・結果ページ再構築のすべてで10万円の商品を除外。
 
-- [ ] **Step 1: 增加并规范化结果价格配置**
+- [ ] **Step 1: 結果価格設定を追加して正規化**
 
-在默认配置和 `config.json` 中增加：
+既定設定と `config.json` に追加：
 
 ```json
 "maxResultPriceYen": 99999
 ```
 
-在配置加载后规范化为正整数，缺失或无效时回退到 `99999`。
+設定ロード後に正の整数へ正規化し、欠落・無効時は `99999` へフォールバック。
 
-- [ ] **Step 2: 把价格上限传入统一过滤函数**
+- [ ] **Step 2: 価格上限を統一フィルター関数へ渡す**
 
 ```js
 hardFilterFailure(assessment, config.maxResultPriceYen)
 resultMatchesHardFilters(entry, config.allowedSeries, config.maxResultPriceYen)
 ```
 
-并在 `HARD_FILTER_MESSAGES` 中增加：
+`HARD_FILTER_MESSAGES` に追加：
 
 ```js
 price: '价格达到或超过10万日元',
 ```
 
-- [ ] **Step 3: 更新中文使用说明**
+- [ ] **Step 3: 使用説明（中文）を更新**
 
-在目标条件和配置说明中明确：`maxResultPriceYen` 当前为 `99,999`，因此 `100,000` 日元及以上商品不会进入结果列表；`maxPriceYen` 仍为 `95,000` 的提醒线。
+目標条件と設定の説明で明示：`maxResultPriceYen` は現在 `99,999` のため、`100,000` 円以上の商品は結果一覧に入らない。`maxPriceYen` は引き続き `95,000` の通知ライン。
 
-- [ ] **Step 4: 运行完整验证**
+- [ ] **Step 4: 完全な検証を実行**
 
 Run: `npm test`
 
-Expected: 所有测试脚本输出 `OK`，命令退出代码为0。
+Expected: すべてのテストスクリプトが `OK` を出力し、コマンドの終了コードが0。
 
 Run: `npm run check`
 
-Expected: 所有 Node.js 语法检查退出代码为0。
+Expected: すべてのNode.js構文チェックの終了コードが0。
 
 Run: `git diff --check`
 
-Expected: 退出代码为0且无空白错误。
+Expected: 終了コードが0で空白エラーなし。
 
-- [ ] **Step 5: 创建中文实现提交**
+- [ ] **Step 5: 実装をコミット**
 
 ```powershell
 git add -- README.md config.json laptop-filters.mjs monitor.mjs test-laptop-filters.mjs
-git commit -m "feat: 剔除10万日元以上Mercari商品" -m "新增独立的结果价格上限，保持现有9.5万日元提醒线不变，并让新旧结果统一执行价格硬过滤。"
+git commit -m "feat: 剔除10万日元以上Mercari商品" -m "新しい独立した結果価格上限を追加し、既存の9.5万円の通知ラインを維持しつつ、新旧結果が同じ価格ハードフィルターを実行するようにした。"
 ```
 
-### Task 3: 载入配置并验证实际运行
+### Task 3: 設定を読み込み、実動作を検証
 
 **Files:**
 - Runtime state only: `monitor.pid`、`monitor-status.js`、`results.json`、`results.html`、`monitor.log`
 
 **Interfaces:**
-- Consumes: 项目自带的 `stop-background.ps1`、`start-background.ps1` 和 `mercari-watch` 只读命令。
-- Produces: 正在运行的新监控进程和已清理的结果页。
+- Consumes: プロジェクト同梱の `stop-background.ps1`、`start-background.ps1`、`mercari-watch` 読み取り専用コマンド。
+- Produces: 実行中の新しい監視プロセスと、掃除済みの結果ページ。
 
-- [ ] **Step 1: 使用项目脚本重启后台监控器**
+- [ ] **Step 1: プロジェクトスクリプトでバックグラウンドモニターを再起動**
 
 ```powershell
 & .\stop-background.ps1
 & .\start-background.ps1
 ```
 
-- [ ] **Step 2: 等待状态回到待机并检查日志**
+- [ ] **Step 2: 状態が待機に戻るのを待ち、ログを確認**
 
-读取 `monitor-status.js`，要求 `running` 为 `true` 且消息最终为“等待下一轮检查”。检查日志中没有启动错误。
+`monitor-status.js` を読み、`running` が `true` で、最終的にメッセージが「次のチェックを待機中」であること。ログに起動エラーがないこと。
 
-- [ ] **Step 3: 通过全局命令核对配置与结果**
+- [ ] **Step 3: グローバルコマンドで設定と結果を確認**
 
 ```powershell
 mercari-watch --json doctor --offline
@@ -160,13 +160,13 @@ mercari-watch --json config show
 mercari-watch --json results recent --limit 200
 ```
 
-要求 `doctor.data.ready` 为 `true`、`maxResultPriceYen` 为 `99999`，且最近结果中不存在 `priceYen >= 100000` 的商品。
+`doctor.data.ready` が `true`、`maxResultPriceYen` が `99999`、直近結果に `priceYen >= 100000` の商品がないこと。
 
-- [ ] **Step 4: 确认最终Git和运行状态**
+- [ ] **Step 4: 最終的なGitと実行状態を確認**
 
 ```powershell
 git status --short
 git log -1 --oneline
 ```
 
-要求工作区干净，最新实现提交存在，后台监控器继续运行。
+ワークツリーがクリーンで、最新の実装コミットが存在し、バックグラウンドモニターが継続動作していること。

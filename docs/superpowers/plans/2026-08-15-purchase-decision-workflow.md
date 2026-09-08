@@ -1,24 +1,24 @@
-# Purchase Decision Workflow Implementation Plan
+# 購入判断ワークフロー 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **エージェントワーカー向け:** 必須サブスキル: superpowers:subagent-driven-development（推奨）または superpowers:executing-plans を使って、この計画をタスク単位で実装してください。手順はチェックボックス（`- [ ]`）構文で追跡します。
 
-**Goal:** Add bounded price/like history, confidence-aware ranking, series and triage filters, expandable details, recommendation help, and 24-hour change markers to the existing static results page.
+**目標:** 既存の静的結果ページに、上限付きの価格/いいね履歴・信頼度を考慮したランキング・シリーズ/閲覧状態フィルター・展開可能な詳細・おすすめの説明・24時間の変化マーカーを追加する。
 
-**Architecture:** A new pure `result-history.mjs` module owns bounded observation history. `monitor.mjs` enriches existing result records without changing its requests or intervals. `results-page.mjs` derives confidence, trends and ranking, then renders a self-contained HTML interface whose personal triage state remains in `localStorage`.
+**アーキテクチャ:** 新しい純粋な `result-history.mjs` モジュールが上限付きの観測履歴を管理する。`monitor.mjs` はリクエストや間隔を変えずに既存の結果レコードを拡充する。`results-page.mjs` は信頼度・トレンド・ランキングを導出し、自己完結型のHTMLインターフェースを描画する。個人の閲覧状態は `localStorage` に残る。
 
-**Tech Stack:** Node.js ES modules, built-in `node:assert/strict`, static HTML/CSS/JavaScript, PowerShell launch scripts, Playwright CLI for final browser verification.
+**テックスタック:** Node.js ES modules、組み込み `node:assert/strict`、静的HTML/CSS/JavaScript、PowerShell起動スクリプト、最終ブラウザ検証用 Playwright CLI。
 
-## Global Constraints
+## グローバル制約
 
-- Backend and page refresh remain every 10 minutes; add no polling, browser pages, or Mercari requests.
-- Add no third-party dependency, database, or resident process.
-- Keep at most 12 distinct observations for price and likes per product.
-- Keep personal triage only in browser `localStorage`.
-- Preserve the current restrained cream, gold-brown and green interface.
+- バックエンドとページ更新は10分ごとのまま。ポーリング・ブラウザページ・Mercariリクエストを追加しない。
+- サードパーティ依存・データベース・常駐プロセスを追加しない。
+- 商品ごとの価格・いいねの観測値は最大12個の異なる値まで。
+- 個人の閲覧状態はブラウザの `localStorage` のみに保持。
+- 現在の落ち着いたベージュ・金茶・緑のインターフェースを維持。
 
 ---
 
-### Task 1: Bounded result history
+### Task 1: 上限付きの結果履歴
 
 **Files:**
 - Create: `result-history.mjs`
@@ -27,10 +27,10 @@
 - Modify: `package.json`
 
 **Interfaces:**
-- Produces: `mergeResultHistory(previous, current, observedAt, baseline)` returning `current` plus `firstSeenAt`, `priceHistory`, and `likeHistory`.
-- Consumes: `baseline = { firstSeenAt, price }` from `state.seen[item.id]` when available.
+- Produces: `mergeResultHistory(previous, current, observedAt, baseline)` が `current` に `firstSeenAt`・`priceHistory`・`likeHistory` を加えて返す。
+- Consumes: 利用可能な場合 `state.seen[item.id]` からの `baseline = { firstSeenAt, price }`。
 
-- [ ] **Step 1: Write failing history tests**
+- [ ] **Step 1: 失敗する履歴テストを書く**
 
 ```js
 assert.deepEqual(
@@ -45,27 +45,27 @@ assert.deepEqual(
 );
 ```
 
-Also assert that identical values do not append, changed values do append, legacy baseline price is retained, invalid values are ignored, and 13 changes retain only the newest 12.
+また、同一値は追加しないこと、変化した値は追加すること、レガシーのベースライン価格が保持されること、無効な値は無視されること、13回の変化で最新12件のみ保持されることを検証する。
 
-- [ ] **Step 2: Run test and verify RED**
-
-Run: `node test-result-history.mjs`
-
-Expected: failure because `result-history.mjs` does not exist.
-
-- [ ] **Step 3: Implement minimal history merger**
-
-Normalize existing arrays to finite `{ value, at }` entries, seed legacy values, append only when the last distinct value differs, and slice to `-12`.
-
-- [ ] **Step 4: Run history test and verify GREEN**
+- [ ] **Step 2: テストを実行して RED を確認**
 
 Run: `node test-result-history.mjs`
 
-Expected: `result history tests: OK`.
+Expected: `result-history.mjs` が存在しないため失敗。
 
-- [ ] **Step 5: Integrate monitor writes**
+- [ ] **Step 3: 最小の履歴マージを実装**
 
-Import `mergeResultHistory` in `monitor.mjs`. Build each current result object first, then assign:
+既存の配列を有限な `{ value, at }` エントリへ正規化し、レガシー値をシードし、最後の異なる値が変わったときのみ追加し、`-12` にスライスする。
+
+- [ ] **Step 4: 履歴テストを実行して GREEN を確認**
+
+Run: `node test-result-history.mjs`
+
+Expected: `result history tests: OK`。
+
+- [ ] **Step 5: モニター書き込みを統合**
+
+`monitor.mjs` で `mergeResultHistory` をインポート。まず各現在の結果オブジェクトを作り、次に代入：
 
 ```js
 results[item.id] = mergeResultHistory(previous, current, now, {
@@ -74,15 +74,15 @@ results[item.id] = mergeResultHistory(previous, current, now, {
 });
 ```
 
-Use the same path in `recordResult` and `recordLiveResult`. Add `test-result-history.mjs` and `result-history.mjs` to `npm test` / `npm run check`.
+`recordResult` と `recordLiveResult` で同じパスを使う。`npm test` / `npm run check` に `test-result-history.mjs` と `result-history.mjs` を追加。
 
-- [ ] **Step 6: Verify Task 1**
+- [ ] **Step 6: Task 1 を検証**
 
 Run: `npm test && npm run check`
 
-Expected: all suites and syntax checks pass.
+Expected: すべてのスイートと構文チェックが成功。
 
-### Task 2: Confidence, trends, changes, and one ranking rule
+### Task 2: 信頼度・トレンド・変化・1つのランキングルール
 
 **Files:**
 - Modify: `results-page.mjs`
@@ -90,64 +90,64 @@ Expected: all suites and syntax checks pass.
 - Modify: `monitor.mjs`
 
 **Interfaces:**
-- Produces: `storageSpecConflict(entry)`, `specConfidence(entry)`, `priceTrend(entry)`, `recentChangeBadges(entry, nowMs)`, and `compareRecommendedEntries(left, right)`.
-- Changes: `isDisplayQualified` and `primaryBlocker` treat memory or storage conflicts as a warning; monitor output and best candidate use `compareRecommendedEntries`.
+- Produces: `storageSpecConflict(entry)`、`specConfidence(entry)`、`priceTrend(entry)`、`recentChangeBadges(entry, nowMs)`、`compareRecommendedEntries(left, right)`。
+- Changes: `isDisplayQualified` と `primaryBlocker` がメモリ/ストレージ矛盾を警告として扱う。モニター出力と最有力候補は `compareRecommendedEntries` を使う。
 
-- [ ] **Step 1: Write failing derivation tests**
+- [ ] **Step 1: 失敗する導出テストを書く**
 
-Use literal fixtures to assert:
+リテラルフィクスチャで検証：
 
 ```js
 assert.deepEqual(
   storageSpecConflict({ title: '32GB SSD512GB', reasons: ['1TB存储'] }),
-  { conflict: true, label: '标题512GB / 检测1TB · 需要人工确认' },
+  { conflict: true, label: 'タイトル512GB / 検出1TB・要確認' },
 );
-assert.equal(specConfidence(confirmedTitle).label, '标题确认');
+assert.equal(specConfidence(confirmedTitle).label, 'タイトル確認');
 assert.equal(priceTrend(changedPrice).delta, -5000);
-assert.deepEqual(recentChangeBadges(changedEntry, nowMs).map((x) => x.label), ['新发现', '降价', '收藏 +2']);
+assert.deepEqual(recentChangeBadges(changedEntry, nowMs).map((x) => x.label), ['新着', '値下げ', 'いいね +2']);
 ```
 
-Assert ranking order using three literal entries with different alert, score and price values.
+異なるアラート・スコア・価格を持つ3つのリテラルエントリを使ってランキング順を検証する。
 
-- [ ] **Step 2: Run test and verify RED**
-
-Run: `node test-results-page.mjs`
-
-Expected: failure because the new exported helpers are missing.
-
-- [ ] **Step 3: Implement pure helpers and safety behavior**
-
-Detect explicit title memory/storage values after NFKC normalization. Derive confidence without making network calls. Compute the latest two distinct history points and only emit change badges whose latest point is within 24 hours. Implement the exact comparator from the design.
-
-- [ ] **Step 4: Run test and verify GREEN**
+- [ ] **Step 2: テストを実行して RED を確認**
 
 Run: `node test-results-page.mjs`
 
-Expected: `results page tests: OK`.
+Expected: 新しいエクスポート済みヘルパーが無いため失敗。
 
-- [ ] **Step 5: Use the comparator in monitor output**
+- [ ] **Step 3: 純粋ヘルパーと安全動作を実装**
 
-Import `compareRecommendedEntries` next to `renderResultsPage`, replace the old alert/time sort, and use the same comparator for `bestEntry`.
+NFKC正規化後に明示的なタイトルのメモリ/ストレージ値を検出。ネットワーク呼び出しなしで信頼度を導出。直近2つの異なる履歴ポイントを計算し、最新ポイントが24時間以内の場合のみ変化バッジを出す。設計どおりの正確なコンパレータを実装。
 
-- [ ] **Step 6: Verify Task 2**
+- [ ] **Step 4: テストを実行して GREEN を確認**
+
+Run: `node test-results-page.mjs`
+
+Expected: `results page tests: OK`。
+
+- [ ] **Step 5: モニター出力でコンパレータを使う**
+
+`renderResultsPage` の隣で `compareRecommendedEntries` をインポートし、古いアラート/時刻ソートを置き換え、`bestEntry` にも同じコンパレータを使う。
+
+- [ ] **Step 6: Task 2 を検証**
 
 Run: `npm test && npm run check`
 
-Expected: all suites and syntax checks pass.
+Expected: すべてのスイートと構文チェックが成功。
 
-### Task 3: Decision workflow interface
+### Task 3: 判断ワークフローインターフェース
 
 **Files:**
 - Modify: `results-page.mjs`
 - Modify: `test-results-page.mjs`
 
 **Interfaces:**
-- Extends: `matchesResultRow(dataset, filter, query, options)` with `series` and `triage` conditions.
-- Produces rendered controls `#series-filter`, `#triage-filter`, `.detail-toggle`, `.product-details`, `.triage-button`, `.change-badge`, and `.recommendation-help`.
+- Extends: `matchesResultRow(dataset, filter, query, options)` が `series` と `triage` 条件を扱う。
+- Produces: 描画コントロール `#series-filter`・`#triage-filter`・`.detail-toggle`・`.product-details`・`.triage-button`・`.change-badge`・`.recommendation-help`。
 
-- [ ] **Step 1: Write failing filter and render tests**
+- [ ] **Step 1: 失敗するフィルター・描画テストを書く**
 
-Assert real behavior for combined search, quick filter, series, and triage:
+検索・クイックフィルター・シリーズ・閲覧状態の組み合わせの実挙動を検証：
 
 ```js
 assert.equal(matchesResultRow(
@@ -158,21 +158,21 @@ assert.equal(matchesResultRow(
 ), true);
 ```
 
-Render fixtures containing history and series fields. Assert controls, expanded detail content, 24-hour badges, trend text, recommendation help, `aria-expanded`, `aria-pressed`, escaped dynamic text, reduced-motion CSS, and valid inline JavaScript.
+履歴とシリーズフィールドを含むフィクスチャを描画。コントロール・展開詳細コンテンツ・24時間バッジ・トレンドテキスト・おすすめ説明・`aria-expanded`・`aria-pressed`・エスケープされた動的テキスト・reduced-motion CSS・有効なインラインJavaScriptを検証。
 
-- [ ] **Step 2: Run test and verify RED**
+- [ ] **Step 2: テストを実行して RED を確認**
 
 Run: `node test-results-page.mjs`
 
-Expected: first missing selector or changed-filter assertion fails.
+Expected: 最初の欠落セレクタまたは変化フィルターのアサーションが失敗。
 
-- [ ] **Step 3: Implement compact controls and row content**
+- [ ] **Step 3: コンパクトなコントロールと行コンテンツを実装**
 
-Generate unique series options from current entries. Replace the `24H 新上架` quick filter with `24H 有变化`. Add price trend and change badges. Keep details inside the product cell so DOM sorting remains stable.
+現在のエントリから一意なシリーズオプションを生成。`24H 新上架` クイックフィルターを `24H 有变化` に置換。価格トレンドと変化バッジを追加。DOMソートを安定に保つため詳細は商品セル内に維持。
 
-- [ ] **Step 4: Implement local triage and details interaction**
+- [ ] **Step 4: ローカルの閲覧状態と詳細操作を実装**
 
-Use keys:
+キーを使う：
 
 ```js
 const triageStorageKey = 'mercari-laptop-monitor-triage-v1';
@@ -180,53 +180,53 @@ const seriesStorageKey = 'mercari-laptop-monitor-series';
 const triageFilterStorageKey = 'mercari-laptop-monitor-triage-filter';
 ```
 
-Default new rows to `unseen`; opening a product changes only `unseen` to `seen`; triage buttons set `unseen`, `watch`, or `ignored`. The default `active` filter excludes ignored rows. Re-run visibility after every state change and retain search/sort/filter state.
+新しい行の既定は `unseen`。商品を開くと `unseen` のみ `seen` へ変更。閲覧状態ボタンは `unseen`・`watch`・`ignored` を設定。既定の `active` フィルターは無視行を除外。状態変更のたびに可視性を再実行し、検索/並び/フィルター状態を保持。
 
-- [ ] **Step 5: Apply restrained CSS and accessible motion**
+- [ ] **Step 5: 控えめなCSSとアクセシブルなモーションを適用**
 
-Add one wrapping control bar, quiet text badges, an inset detail area, visible focus styles, and 160ms transitions. Add:
+ラッパーのコントロールバー1本・静かなテキストバッジ・内側の詳細領域・可視フォーカス・160msトランジションを追加。追加：
 
 ```css
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
 ```
 
-- [ ] **Step 6: Run focused and full tests**
+- [ ] **Step 6: 対象・完全テストを実行**
 
 Run: `node test-results-page.mjs && npm test && npm run check`
 
-Expected: all suites and syntax checks pass.
+Expected: すべてのスイートと構文チェックが成功。
 
-### Task 4: Live generation and browser acceptance
+### Task 4: ライブ生成とブラウザ受入
 
 **Files:**
 - Generated, not committed: `results.html`, `results.json`
 - Modify only if a failing acceptance check exposes a tested defect: related source and test file.
 
 **Interfaces:**
-- Consumes: existing `stop-background.ps1`, `start-background.ps1`, and `open-results.cmd` workflow.
-- Produces: one live static page generated by the single existing monitor process.
+- Consumes: 既存の `stop-background.ps1`、`start-background.ps1`、`open-results.cmd` ワークフロー。
+- Produces: 単一の既存モニタープロセスが生成する1つのライブ静的ページ。
 
-- [ ] **Step 1: Restart the existing monitor once**
+- [ ] **Step 1: 既存モニターを1回再起動**
 
-Run the existing stop and start scripts, then confirm `monitor.pid` points to one responding Node process and `results.html` has a new timestamp.
+既存の停止・開始スクリプトを実行し、`monitor.pid` が1つの応答するNodeプロセスを指し、`results.html` に新しいタイムスタンプがあることを確認。
 
-- [ ] **Step 2: Browser acceptance**
+- [ ] **Step 2: ブラウザ受入**
 
-Serve the workspace only for the test session. In Playwright verify:
+ワークスペースをテストセッションの間だけ提供。Playwrightで検証：
 
-- series filter narrows results;
-- details opens and updates `aria-expanded`;
-- setting ignored hides the row under `active` and reappears under `ignored`;
-- state survives reload;
-- recommendation help and change markers render;
-- seven columns remain aligned at 1440px and the 820px layout remains usable.
+- シリーズフィルターが結果を絞る。
+- 詳細が開き `aria-expanded` を更新する。
+- ignored に設定すると `active` で行が隠れ、`ignored` で再表示される。
+- 状態が再読み込み後も保持される。
+- おすすめ説明と変化マーカーが描画される。
+- 1440px で7列が揃い、820px レイアウトも使用可能。
 
-- [ ] **Step 3: Stop all temporary verification resources**
+- [ ] **Step 3: すべての一時検証リソースを停止**
 
-Close the Playwright browser and stop the temporary HTTP server. Keep only the intended monitor Node process.
+Playwrightブラウザを閉じ、一時HTTPサーバーを停止。意図したモニターNodeプロセスのみ残す。
 
-- [ ] **Step 4: Final verification and commit**
+- [ ] **Step 4: 最終検証とコミット**
 
 Run: `git diff --check && npm test && npm run check`
 
-Review `git status`, stage only planned source/tests/docs, commit, then confirm a clean worktree and the latest commit.
+`git status` を確認し、計画されたソース/テスト/docs のみステージし、コミットし、クリーンなワークツリーと最新コミットを確認。

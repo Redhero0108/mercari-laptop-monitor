@@ -1,25 +1,25 @@
-# Quality-First Business Series Implementation Plan
+# 品質優先ビジネスシリーズ 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **エージェントワーカー向け:** 必須サブスキル: superpowers:subagent-driven-development（推奨）または superpowers:executing-plans を使って、この計画をタスク単位で実装してください。手順はチェックボックス（`- [ ]`）構文で追跡します。
 
-**Goal:** Add six quality-filtered business laptop series, lower the alert ceiling to ¥70,000, and safely recheck listings skipped only by the old series allowlist.
+**目標:** 品質でフィルターされた6つのビジネスノートシリーズを追加し、通知上限を ¥70,000 に引き下げ、旧シリーズ許可リストだけによってスキップされた出品を安全に再チェックする。
 
-**Architecture:** Extend the centralized series detector with precise product-line rules and keep all allowlist consumers using its stable IDs. Add a pure state-migration helper that restores only newly allowed series rejections, then call it before scanning. Keep the independent ¥99,999 result ceiling unchanged while aligning all alert-price defaults to ¥70,000.
+**アーキテクチャ:** 中央のシリーズ検出器を正確な製品ラインルールで拡張し、すべての許可リスト利用者がその安定IDを使うようにする。純粋な状態マイグレーションヘルパーを追加して、新たに許可されたシリーズ拒否だけを復元し、スキャンの前に呼び出す。独立した ¥99,999 の結果上限は変更せず、すべての通知価格の既定を ¥70,000 に揃える。
 
-**Tech Stack:** Node.js ES modules, JSON configuration, Windows PowerShell launch scripts, Node built-in assertions.
+**テックスタック:** Node.js ES modules、JSON設定、Windows PowerShell起動スクリプト、Node組み込みアサーション。
 
-## Global Constraints
+## グローバル制約
 
-- Keep the original five allowed series.
-- Add only LIFEBOOK U7412, quality-tier VersaPro, ExpertBook B9, VAIO Pro, Latitude 5000/7000/9000, and EliteBook.
-- Generic VersaPro, Latitude 3000, generic VAIO, non-U7412 LIFEBOOK, and non-B9 ExpertBook remain excluded.
-- Alert ceiling is exactly `70000`; result ceiling remains exactly `99999`.
-- Restore only history entries rejected by the old series rule and now accepted by the new detector.
-- Do not add dependencies or alter CPU, memory, storage, condition, notification, or ten-minute scheduling rules.
+- 元の5つの許可シリーズを維持。
+- LIFEBOOK U7412・高品質VersaPro・ExpertBook B9・VAIO Pro・Latitude 5000/7000/9000・EliteBook のみ追加。
+- 汎称VersaPro・Latitude 3000・汎称VAIO・非U7412 LIFEBOOK・非B9 ExpertBook は除外のまま。
+- 通知上限は正確に `70000`。結果上限は正確に `99999` のまま。
+- 旧シリーズルールで拒否され、新しい検出器で許可される履歴エントリのみ復元。
+- 依存を追加せず、CPU・メモリ・ストレージ・状態・通知・10分スケジューリングのルールを変更しない。
 
 ---
 
-### Task 1: Add precise series recognition
+### Task 1: 正確なシリーズ認識を追加
 
 **Files:**
 - Modify: `test-laptop-filters.mjs`
@@ -28,22 +28,22 @@
 - Modify: `scoring.mjs`
 
 **Interfaces:**
-- Consumes: `detectLaptopSeries(text)` and `DEFAULT_ALLOWED_SERIES`.
-- Produces: six stable IDs: `fujitsu-lifebook-u7412`, `nec-versapro-premium`, `asus-expertbook-b9`, `vaio-pro`, `dell-latitude-premium`, `hp-elitebook`.
+- Consumes: `detectLaptopSeries(text)` と `DEFAULT_ALLOWED_SERIES`。
+- Produces: 6つの安定ID: `fujitsu-lifebook-u7412`、`nec-versapro-premium`、`asus-expertbook-b9`、`vaio-pro`、`dell-latitude-premium`、`hp-elitebook`。
 
-- [ ] **Step 1: Write failing positive and negative detector tests**
+- [ ] **Step 1: 失敗する肯定的・否定的な検出器テストを書く**
 
-Add positive titles for the six IDs and negative assertions for `LIFEBOOK U9312`, generic `NEC VersaPro`, `ExpertBook B5`, `VAIO SX12`, and `Latitude 3420`. Include positive VersaPro titles containing `UltraLite` or `タイプVN`, and Latitude models 5350, 7450, and 9450.
+6つのIDに対する肯定的タイトルと、`LIFEBOOK U9312`・汎称 `NEC VersaPro`・`ExpertBook B5`・`VAIO SX12`・`Latitude 3420` に対する否定的アサーションを追加。`UltraLite` または `タイプVN` を含む肯定的VersaProタイトルと、Latitude 5350・7450・9450 を含める。
 
-- [ ] **Step 2: Run the detector test and confirm RED**
+- [ ] **Step 2: 検出器テストを実行して RED を確認**
 
-Run `node .\test-laptop-filters.mjs`.
+Run `node .\test-laptop-filters.mjs`。
 
-Expected: the first new positive case has no detected ID.
+Expected: 最初の新しい肯定的ケースに検出IDがない。
 
-- [ ] **Step 3: Add minimal regex rules**
+- [ ] **Step 3: 最小の正規表現ルールを追加**
 
-Add rules before generic consumers in `SERIES_RULES`:
+`SERIES_RULES` の汎用コンシューマーの前にルールを追加：
 
 ```js
 { id: 'fujitsu-lifebook-u7412', label: 'Fujitsu LIFEBOOK U7412', pattern: /\blife\s*book\s*u7412\b/i }
@@ -54,17 +54,17 @@ Add rules before generic consumers in `SERIES_RULES`:
 { id: 'hp-elitebook', label: 'HP EliteBook', pattern: /(?:\bhp\s+)?\belite\s*book\b/i }
 ```
 
-- [ ] **Step 4: Extend scoring coverage and business-model recognition**
+- [ ] **Step 4: スコアリングの対象範囲とビジネスモデル認識を拡張**
 
-Append the six IDs to the scoring test allowlist, verify every accepted title can alert at ¥60,000, and add `expertbook\s*b9` plus the accepted VersaPro forms to `BUSINESS_MODELS`.
+6つのIDをスコアリングテストの許可リストへ追加し、受け入れられるすべてのタイトルが ¥60,000 で通知できることを確認し、`BUSINESS_MODELS` に `expertbook\s*b9` と受け入れられるVersaPro形式を追加する。
 
-- [ ] **Step 5: Run focused tests and confirm GREEN**
+- [ ] **Step 5: 対象テストを実行して GREEN を確認**
 
-Run `node .\test-laptop-filters.mjs` and `node .\test-scoring.mjs`.
+Run `node .\test-laptop-filters.mjs` と `node .\test-scoring.mjs`。
 
-Expected: both print `OK` and exit 0.
+Expected: 両方とも `OK` を表示し exit 0。
 
-### Task 2: Migrate only newly allowed historical skips
+### Task 2: 新たに許可された過去スキップのみを移行
 
 **Files:**
 - Create: `state-migrations.mjs`
@@ -73,34 +73,34 @@ Expected: both print `OK` and exit 0.
 - Modify: `package.json`
 
 **Interfaces:**
-- Consumes: `isAllowedLaptopSeries(title, allowedSeries)`.
-- Produces: `restoreNewlyAllowedSeriesSkips(state, allowedSeries) -> string[]`, returning restored item IDs while mutating only `state.seen`.
+- Consumes: `isAllowedLaptopSeries(title, allowedSeries)`。
+- Produces: `restoreNewlyAllowedSeriesSkips(state, allowedSeries) -> string[]`。`state.seen` のみを変異させ、復元したアイテムIDを返す。
 
-- [ ] **Step 1: Write the failing migration test**
+- [ ] **Step 1: 失敗する移行テストを書く**
 
-Create a state fixture containing: an old series rejection now accepted, an old series rejection still disallowed, a storage rejection, and a normal seen item. Assert that only the newly accepted series ID is removed and returned.
+旧シリーズ拒否（現在許可）・旧シリーズ拒否（まだ不許可）・ストレージ拒否・正常な既視アイテムを含む状態フィクスチャを作る。新たに許可されたシリーズIDのみが削除・返されることを検証する。
 
-- [ ] **Step 2: Run the migration test and confirm RED**
+- [ ] **Step 2: 移行テストを実行して RED を確認**
 
-Run `node .\test-state-migrations.mjs`.
+Run `node .\test-state-migrations.mjs`。
 
-Expected: module-not-found for `state-migrations.mjs`.
+Expected: `state-migrations.mjs` の module-not-found。
 
-- [ ] **Step 3: Implement the pure migration helper**
+- [ ] **Step 3: 純粋な移行ヘルパーを実装**
 
-Recognize the historical messages `不在指定五个商务系列中` and `非指定商务系列`. For each matching entry, delete it only if its current title is allowed. Return deleted IDs without touching `initialized` or unrelated entries.
+過去のメッセージ `不在指定五个商务系列中` と `非指定商务系列` を認識する。各一致エントリについて、現在のタイトルが許可されている場合のみ削除する。`initialized` や無関係なエントリには触れず、削除したIDを返す。
 
-- [ ] **Step 4: Integrate migration before monitor scanning**
+- [ ] **Step 4: モニタースキャンの前に移行を統合**
 
-Import the helper in `monitor.mjs`. After logging is available but before PID claim and page generation, call it; when IDs are returned, call `saveState()` once and log `已恢复 N 件因旧系列规则跳过的商品，等待重新检查。` Change the live hard-filter message to `不在指定品质商务系列中`.
+ヘルパーを `monitor.mjs` にインポート。ログが利用可能になった後、PID取得とページ生成の前に呼び出す。IDが返されたら `saveState()` を一度呼び、`已恢复 N 件因旧系列规则跳过的商品，等待重新检查。` をログ出力。ライブハードフィルターメッセージを `不在指定品质商务系列中` に変更。
 
-- [ ] **Step 5: Register and run the test**
+- [ ] **Step 5: テストを登録して実行**
 
-Add `node test-state-migrations.mjs` to `npm test`, add `node --check state-migrations.mjs` to `npm run check`, then run the focused test and syntax checks for both `state-migrations.mjs` and `monitor.mjs`.
+`npm test` に `node test-state-migrations.mjs`、`npm run check` に `node --check state-migrations.mjs` を追加し、`state-migrations.mjs` と `monitor.mjs` の両方で対象テストと構文チェックを実行。
 
-Expected: migration test prints `OK`; syntax check exits 0.
+Expected: 移行テストが `OK` を表示。構文チェック exit 0。
 
-### Task 3: Lower only the alert ceiling
+### Task 3: 通知上限のみ引き下げ
 
 **Files:**
 - Modify: `config.json`
@@ -112,61 +112,61 @@ Expected: migration test prints `OK`; syntax check exits 0.
 - Modify: `test-runtime-intervals.mjs`
 
 **Interfaces:**
-- Consumes: `config.maxPriceYen` for alert decisions and `config.maxResultPriceYen` for result retention.
-- Produces: alert threshold `70000`, unchanged result retention threshold `99999`.
+- Consumes: 通知判定の `config.maxPriceYen` と結果保持の `config.maxResultPriceYen`。
+- Produces: 通知しきい値 `70000`、変更しない結果保持しきい値 `99999`。
 
-- [ ] **Step 1: Write failing price-boundary tests**
+- [ ] **Step 1: 価格境界の失敗テストを書く**
 
-Assert a fully qualified ¥70,000 item alerts, a ¥70,001 item does not alert, `primaryBlocker()` reports `超预算 ¥1`, and runtime configuration is `maxPriceYen === 70000` plus `maxResultPriceYen === 99999`.
+完全適合の ¥70,000 アイテムが通知し、¥70,001 アイテムが通知しないこと、`primaryBlocker()` が `超预算 ¥1` を報告すること、ランタイム設定が `maxPriceYen === 70000` かつ `maxResultPriceYen === 99999` であることを検証する。
 
-- [ ] **Step 2: Run price tests and confirm RED**
+- [ ] **Step 2: 価格テストを実行して RED を確認**
 
-Run `node .\test-scoring.mjs`, `node .\test-results-page.mjs`, and `node .\test-runtime-intervals.mjs`.
+Run `node .\test-scoring.mjs`、`node .\test-results-page.mjs`、`node .\test-runtime-intervals.mjs`。
 
-Expected: at least the ¥70,001 alert or configuration assertion fails under the old ¥95,000 threshold.
+Expected: 少なくとも ¥70,001 の通知または設定アサーションが、旧 ¥95,000 しきい値の下で失敗する。
 
-- [ ] **Step 3: Align configured and fallback alert ceilings**
+- [ ] **Step 3: 設定値とフォールバックの通知上限を揃える**
 
-Set `config.json.maxPriceYen`, `monitor.mjs` default, `scoring.mjs` fallback, and `results-page.mjs` fallback to `70000`. Leave every `maxResultPriceYen` value at `99999`.
+`config.json.maxPriceYen`・`monitor.mjs` の既定・`scoring.mjs` のフォールバック・`results-page.mjs` のフォールバックを `70000` に設定。すべての `maxResultPriceYen` は `99999` のまま。
 
-- [ ] **Step 4: Run focused tests and confirm GREEN**
+- [ ] **Step 4: 対象テストを実行して GREEN を確認**
 
-Run the three price-related test files again.
+3つの価格関連テストファイルを再度実行。
 
-Expected: all print `OK` and exit 0.
+Expected: すべて `OK` を表示し exit 0。
 
-### Task 4: Document, verify, commit, and activate
+### Task 4: 文書化・検証・コミット・有効化
 
 **Files:**
 - Modify: `README.md`
 - Runtime-only: `state.json`, `results.json`, `results.html`, `monitor.pid`, `monitor-status.js`, `monitor.log`
 
 **Interfaces:**
-- Consumes: project test scripts and project-specific background start/stop scripts.
-- Produces: committed implementation and one running ten-minute monitor using the new filters.
+- Consumes: プロジェクトのテストスクリプトとプロジェクト固有のバックグラウンド開始/停止スクリプト。
+- Produces: コミット済み実装と、新しいフィルターを使う実行中10分モニター1つ。
 
-- [ ] **Step 1: Update README**
+- [ ] **Step 1: README を更新**
 
-List all eleven allowed series with the strict Latitude and VersaPro qualification, document ¥70,000 alert versus ¥99,999 result ceilings, and remove references to “five series” or ¥95,000.
+厳格な Latitude・VersaPro の限定を含めて11の許可シリーズすべてを列挙し、¥70,000 通知と ¥99,999 結果上限を文書化し、「five series」や ¥95,000 への参照を削除。
 
-- [ ] **Step 2: Run complete verification**
+- [ ] **Step 2: 完全な検証を実行**
 
-Run `npm test`, `npm run check`, `git diff --check`, and CLI `doctor` plus `config show`.
+Run `npm test`、`npm run check`、`git diff --check`、CLI の `doctor` と `config show`。
 
-Expected: all tests and syntax checks pass; doctor reports `ready: true`; configuration reports `70000`, `99999`, and all eleven allowed IDs.
+Expected: すべてのテストと構文チェックが成功。doctor が `ready: true` を報告。設定が `70000`・`99999`・11の許可IDすべてを報告。
 
-- [ ] **Step 3: Commit implementation**
+- [ ] **Step 3: 実装をコミット**
 
-Commit source, tests, config, and README with `feat: 扩展品质商务本筛选`.
+ソース・テスト・設定・README を `feat: 扩展品质商务本筛选` でコミット。
 
-- [ ] **Step 4: Activate without touching unrelated processes**
+- [ ] **Step 4: 無関係なプロセスに触れず有効化**
 
-Use `monitor.pid` and `stop-background.ps1` to stop only the project monitor. Start a bounded `mercari-watch --json check` to apply the targeted migration and recheck restored items, then restart `start-background.ps1`.
+`monitor.pid` と `stop-background.ps1` を使ってプロジェクトのモニターのみ停止。上限付きの `mercari-watch --json check` を開始して対象の移行を適用し復元アイテムを再チェックしてから、`start-background.ps1` を再起動。
 
-- [ ] **Step 5: Verify runtime output**
+- [ ] **Step 5: ランタイム出力を検証**
 
-Confirm the log reports the restored count, the new hidden monitor reaches `运行中 / 等待下一轮检查`, generated results retain no item priced ¥100,000 or more, and no disallowed negative-series fixture can pass the detector.
+ログが復元件数を報告し、新しい隠しモニターが `実行中 / 次のチェックを待機中` に達し、生成結果に ¥100,000 以上のアイテムが残らず、不許可の否定的シリーズフィクスチャが検出器を通過できないことを確認。
 
-- [ ] **Step 6: Verify final repository state**
+- [ ] **Step 6: 最終リポジトリ状態を確認**
 
-Run `git status --short`, `git log -4 --oneline`, and a fresh `npm test` plus `npm run check` before reporting completion.
+完了報告の前に `git status --short`、`git log -4 --oneline`、新規の `npm test` と `npm run check` を実行。

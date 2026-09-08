@@ -1,24 +1,24 @@
-# Five Business Series Filter Implementation Plan
+# 5つのビジネスシリーズフィルター 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **エージェントワーカー向け:** 必須サブスキル: superpowers:subagent-driven-development（推奨）または superpowers:executing-plans を使って、この計画をタスク単位で実装してください。手順はチェックボックス（`- [ ]`）構文で追跡します。
 
-**Goal:** Limit Mercari laptop monitoring and displayed results to ThinkPad X1 Carbon, HP ProBook, Dell Precision, Panasonic Let's note, and Dynabook G83 while preserving the current hardware, CPU, condition, price, availability, and JUNK exclusions.
+**目標:** MercariのノートPC監視と表示結果を、ThinkPad X1 Carbon・HP ProBook・Dell Precision・Panasonic Let's note・Dynabook G83 に制限しつつ、現在のハードウェア・CPU・状態・価格・在庫・JUNK除外を維持する。
 
-**Architecture:** Add a focused laptop-series and hard-filter module that normalizes the five supported series and explains rejection reasons. Reuse it in scoring and every monitor ingestion/refresh path, store eligibility facts with each result, and filter legacy results when regenerating the page. Keep the existing global CLI as the only keyword write path and atomically replace the five capacity searches with five series-plus-32GB searches.
+**アーキテクチャ:** ノートシリーズとハードフィルターに特化したモジュールを追加し、5つのサポートシリーズを正規化して拒否理由を説明する。スコアリングとすべての監視取り込み/更新パスでそれを再利用し、各結果に適合性の事実を保存し、ページ再生成時にレガシー結果をフィルターする。既存のグローバルCLIを唯一のキーワード書き込みパスとし、5つの容量検索を、シリーズ＋32GB の5つの検索へ原子的に置き換える。
 
-**Tech Stack:** Node.js ES modules, built-in `node:assert`, PowerShell, global `mercari-watch` CLI.
+**テックスタック:** Node.js ES modules、組み込み `node:assert`、PowerShell、グローバル `mercari-watch` CLI。
 
-## Global Constraints
+## グローバル制約
 
-- Runtime remains Windows 10 and PowerShell compatible.
-- Allowed series are exactly ThinkPad X1 Carbon, HP ProBook, Dell Precision, Panasonic Let's note, and Dynabook G83.
-- Keep 32GB RAM, SSD capacity of at least 512GB, Intel generation 12 or newer, condition levels 1-3, price ceiling, JUNK exclusion, and on-sale checks.
-- Do not purchase products or contact sellers.
-- Do not commit unless the user separately requests it.
+- ランタイムは Windows 10 と PowerShell 互換のまま。
+- 許可シリーズは正確に ThinkPad X1 Carbon・HP ProBook・Dell Precision・Panasonic Let's note・Dynabook G83。
+- 32GBメモリ・512GB以上のSSD・Intel第12世代以上・状態レベル1-3・価格上限・JUNK除外・在庫チェックを維持。
+- 商品を購入せず、出品者にも連絡しない。
+- ユーザーが別途要求しない限りコミットしない。
 
 ---
 
-### Task 1: Series recognition and hard eligibility
+### Task 1: シリーズ認識とハード適合性
 
 **Files:**
 - Create: `laptop-filters.mjs`
@@ -27,26 +27,26 @@
 - Modify: `test-scoring.mjs`
 
 **Interfaces:**
-- Produces: `DEFAULT_ALLOWED_SERIES`, `detectLaptopSeries(text)`, `isAllowedLaptopSeries(text, allowedSeries)`, `hardFilterFailure(assessment)`, and `resultMatchesHardFilters(entry, allowedSeries)`.
-- Produces: `assessment.series`, `assessment.seriesEligible`, and existing hardware facts for monitor persistence.
+- Produces: `DEFAULT_ALLOWED_SERIES`、`detectLaptopSeries(text)`、`isAllowedLaptopSeries(text, allowedSeries)`、`hardFilterFailure(assessment)`、`resultMatchesHardFilters(entry, allowedSeries)`。
+- Produces: モニター永続化のための `assessment.series`・`assessment.seriesEligible`・既存のハードウェア情報。
 
-- [ ] **Step 1: Write failing tests for the five series, rejected non-target series, and missing hardware.**
+- [ ] **Step 1: 5つのシリーズ・拒否される非対象シリーズ・ハードウェア欠落の失敗テストを書く**
 
-  Use literal titles for all five supported families plus HP EliteBook as a negative example. Assert that an otherwise eligible EliteBook is not alertable when `allowedSeries` is configured.
+5つのサポートファミリーすべてにリテラルタイトルを使い、HP EliteBook をネガティブ例として使う。それ以外は適合する EliteBook が、`allowedSeries` 設定時に通知対象にならないことを検証する。
 
-- [ ] **Step 2: Run the focused tests and verify failure because the new module and fields do not exist.**
+- [ ] **Step 2: 対象テストを実行し、新しいモジュールとフィールドが存在しないため失敗することを確認**
 
-  Run: `node test-laptop-filters.mjs`
+Run: `node test-laptop-filters.mjs`
 
-- [ ] **Step 3: Implement the minimal normalizer and connect it to scoring.**
+- [ ] **Step 3: 最小の正規化器を実装し、スコアリングへ接続**
 
-  Return stable series IDs and labels, support Japanese `レッツノート` plus common `CF-*` model notation, and keep scoring unrestricted only when `allowedSeries` is absent.
+安定したシリーズIDとラベルを返し、日本語 `レッツノート` と一般的な `CF-*` 型番表記をサポートし、`allowedSeries` が存在しない場合のみスコアリングを無制限に保つ。
 
-- [ ] **Step 4: Run focused scoring/filter tests and verify they pass.**
+- [ ] **Step 4: 対象のスコアリング/フィルターテストを実行し、通過を確認**
 
-  Run: `node test-laptop-filters.mjs; node test-scoring.mjs`
+Run: `node test-laptop-filters.mjs; node test-scoring.mjs`
 
-### Task 2: Enforce the rules throughout the monitor
+### Task 2: モニター全体でルールを強制
 
 **Files:**
 - Modify: `monitor.mjs`
@@ -55,44 +55,44 @@
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: the filter functions and assessment fields from Task 1.
-- Produces: strict filtering on initial scans, metadata refreshes, live refreshes, and legacy-result page regeneration.
+- Consumes: Task 1 のフィルター関数と評価フィールド。
+- Produces: 初期スキャン・メタデータ更新・ライブ更新・レガシー結果のページ再生成で厳格なフィルター。
 
-- [ ] **Step 1: Add monitor-facing assertions to `test-laptop-filters.mjs` for persisted legacy and current result shapes.**
+- [ ] **Step 1: 永続化されたレガシー・現在の結果形状に対するモニター向けアサーションを `test-laptop-filters.mjs` に追加**
 
-- [ ] **Step 2: Run the focused test and verify the legacy result case fails.**
+- [ ] **Step 2: 対象テストを実行し、レガシー結果ケースが失敗することを確認**
 
-  Run: `node test-laptop-filters.mjs`
+Run: `node test-laptop-filters.mjs`
 
-- [ ] **Step 3: Apply the hard filter after CPU and condition checks in every ingestion path.**
+- [ ] **Step 3: すべての取り込みパスのCPU・状態チェックの後にハードフィルターを適用**
 
-  Persist `has32GB`, `has512GB`, `hasSSD`, `seriesId`, `seriesLabel`, and `seriesEligible`; regenerate results using the same filter so old non-target rows disappear.
+`has32GB`・`has512GB`・`hasSSD`・`seriesId`・`seriesLabel`・`seriesEligible` を永続化し、同じフィルターで結果を再生成して古い非対象行を消す。
 
-- [ ] **Step 4: Set `allowedSeries` to the five stable IDs and document the restriction.**
+- [ ] **Step 4: `allowedSeries` を5つの安定IDに設定し、制限を文書化**
 
-- [ ] **Step 5: Run focused tests and syntax checks.**
+- [ ] **Step 5: 対象テストと構文チェックを実行**
 
-  Run: `npm run check; node test-laptop-filters.mjs; node test-scoring.mjs`
+Run: `npm run check; node test-laptop-filters.mjs; node test-scoring.mjs`
 
-### Task 3: Replace the five monitoring tasks through `mercari-watch`
+### Task 3: `mercari-watch` を通じて5つの監視タスクを置換
 
 **Files:**
-- Modify through CLI: `config.json` (`queries` only)
+- Modify through CLI: `config.json`（`queries` のみ）
 
 **Interfaces:**
-- Consumes: `mercari-watch keywords replace-all`.
-- Produces: five enabled tasks using each allowed series name plus `32GB`.
+- Consumes: `mercari-watch keywords replace-all`。
+- Produces: 各許可シリーズ名＋`32GB` を使う5つの有効タスク。
 
-- [ ] **Step 1: Dry-run an atomic replacement with the five series searches.**
+- [ ] **Step 1: 5つのシリーズ検索で原子的置換をドライラン**
 
-  Use `X1 Carbon 32GB`, `HP ProBook 32GB`, `Dell Precision 32GB`, `レッツノート 32GB`, and `dynabook G83 32GB`. The shorter X1 query is required because many legitimate Mercari titles omit the `ThinkPad` word.
+`X1 Carbon 32GB`・`HP ProBook 32GB`・`Dell Precision 32GB`・`レッツノート 32GB`・`dynabook G83 32GB` を使う。短い X1 クエリは、多くの正当なMercariタイトルが `ThinkPad` の語を省略するため必須。
 
-- [ ] **Step 2: Apply the same replacement with `--yes`.**
+- [ ] **Step 2: 同じ置換を `--yes` で適用**
 
-- [ ] **Step 3: Verify tasks and configuration through stable JSON output.**
+- [ ] **Step 3: 安定したJSON出力でタスクと設定を確認**
 
-  Run: `mercari-watch --json tasks list; mercari-watch --json config show`
+Run: `mercari-watch --json tasks list; mercari-watch --json config show`
 
-- [ ] **Step 4: Run the full offline test suite and inspect the final diff.**
+- [ ] **Step 4: 完全なオフラインテストスイートを実行し、最終diffを確認**
 
-  Run: `npm test; npm run check; git diff --check; git status --short`
+Run: `npm test; npm run check; git diff --check; git status --short`
