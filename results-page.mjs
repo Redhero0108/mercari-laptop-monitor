@@ -458,7 +458,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     th:nth-child(4) { width: 88px; }
     th:nth-child(5) { width: 190px; }
     th:nth-child(7) { width: 118px; }
-    th, td { padding: 12px 14px; border-bottom: 1px solid #ebe5da; text-align: left; vertical-align: middle; white-space: nowrap; }
+    th, td { overflow: hidden; padding: 12px 14px; border-bottom: 1px solid #ebe5da; text-align: left; vertical-align: middle; white-space: nowrap; }
     th { position: sticky; top: 0; z-index: 2; background: #ece6da; color: #735824; font-size: 12px; font-weight: 750; letter-spacing: .025em; box-shadow: inset 0 -1px #d2c6af; }
     tbody tr { transition: background-color .16s ease; }
     tbody tr:hover { background: #fbf4e7; }
@@ -522,7 +522,7 @@ export function renderResultsPage(entries, config = {}, { nowMs = Date.now() } =
     .triage-controls > span { margin-right: 2px; color: #5c4926; font-weight: 800; }
     .triage-button { padding: 3px 8px; border: 1px solid #d5c9b4; border-radius: 5px; background: #fffefa; color: #6d675e; font: inherit; font-size: 12px; cursor: pointer; }
     .triage-button[aria-pressed="true"] { border-color: #b58a3d; background: #f3e8d2; color: #76591f; font-weight: 800; }
-    .decision { display: inline-block; max-width: 210px; padding: 3px 7px; border: 1px solid; border-radius: 5px; font-size: 12px; font-weight: 800; line-height: 1.35; white-space: normal; }
+    .decision { display: block; width: 100%; max-width: 100%; padding: 3px 7px; border: 1px solid; border-radius: 5px; font-size: 12px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; white-space: normal; }
     .decision-match { border-color: #8ebca5; background: #e8f4ed; color: #2f7254; }
     .decision-blocked { border-color: #d5b8a8; background: #f8eee8; color: #985a45; }
     .decision-warning { border-color: #d6bd7c; background: #fff5d9; color: #815d18; }

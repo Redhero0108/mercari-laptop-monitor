@@ -455,6 +455,8 @@ assert.match(rendered, /class="price-detail is-over">\+¥5,000/);
 assert.match(rendered, /class="decision-cell"><span class="decision decision-blocked">予算超過 ¥5,000/);
 assert.match(rendered, /class="decision-cell"><span class="decision decision-match">通知条件合致/);
 assert.match(rendered, /class="decision-cell"><span class="decision decision-warning">タイトル16GB \/ 検出32GB・要確認/);
+assert.match(rendered, /th, td \{ overflow: hidden; padding:/);
+assert.match(rendered, /\.decision \{ display: block; width: 100%; max-width: 100%;[\s\S]*?overflow-wrap: anywhere;/);
 assert.match(rendered, /data-title="HP EliteBook 830 G10 16GB 1TB" data-match="0" data-budget="1"/);
 assert.match(rendered, /data-search="[^"]*HP EliteBook[^"]*Intel 第13代[^"]*予算超過 ¥5,000/);
 assert.match(rendered, /class="date-cell" title="2026\/08\/12 10:30 JST">08-12 10:30/);
